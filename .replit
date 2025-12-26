@@ -1,0 +1,9 @@
+run = "python main.py"
+entrypoint = "main.py"
+modules = ["nodejs-20", "python-3.10"]
+
+[nix]
+
+[[ports]]
+localPort = 5000
+externalPort = 80
