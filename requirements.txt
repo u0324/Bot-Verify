@@ -1,3 +1,8 @@
 flask
-requests
 discord-interactions
+requests
+playwright
+pandas
+numpy
+scikit-learn
+gunicorn
