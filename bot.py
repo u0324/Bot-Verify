@@ -50,7 +50,10 @@ def fetch_stock_price_sync():
     """Playwrightを使って株価を取得 (同期処理)"""
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+browser = p.chromium.launch(
+    headless=True,
+    args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+)
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/104.1"
             )
