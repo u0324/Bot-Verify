@@ -1,8 +1,8 @@
 flask
+gunicorn
 discord-interactions
 requests
 playwright
 pandas
 numpy
 scikit-learn
-gunicorn
