@@ -1,1 +1,7 @@
-
+flask
+gunicorn
+discord-interactions
+requests
+pandas
+numpy
+scikit-learn
