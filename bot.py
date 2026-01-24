@@ -34,6 +34,11 @@ history_lock = threading.Lock()
 def get_anime_data(search_query=None, season_key=None, count=10):
     url = "https://api.annict.com/v1/works"
     params = {'access_token': ANNICT_TOKEN, 'sort_watchers_count': 'desc', 'per_page': count}
+ response = requests.get(url, params=params)  
+        return response.json().get('works', [])  
+    except Exception as e:  
+        print(f"Anime API Error: {e}")  
+        return []    
     if search_query:
         params['filter_title'] = search_query
     elif season_key:
