@@ -39,23 +39,31 @@ def get_anime_data(search_query=None, season_key=None, count=10):
     elif season_key:
         params['filter_season'] = f"{datetime.now().year}-{SEASON_MAP[season_key]}"
     try:
-        res = requests.get(url, params=params, timeout=5).json()
-        return res.get('works', [])
-    except:
-        return []
-
-def fetch_stock_price_sync():
-    """ブラウザを使わず、直接HTMLを取得して解析（超軽量版）"""
+        def fetch_stock_price_sync():
+    """より確実に数字を抜き出す修正版"""
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/104.1"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        # サイトからHTMLを取得
         response = requests.get(TARGET_URL, headers=headers, timeout=10)
         content = response.text
 
-        # 正規表現で「数字 コイン」の形を探す
-        match = re.search(r'([\d,]+)\s*(コイン|coin)', content)
+        # 1. まずHTMLタグを除去してテキストだけにする
+        clean_text = re.sub(r'<[^>]+>', ' ', content)
+        
+        # 2. 数字 + (空白) + コイン/coin のパターンをより広く探す
+        # カンマがあってもなくても、小数があってもなくても対応
+        match = re.search(r'([\d,.]+)\s*(?:コイン|coin|Coin)', clean_text)
+        
+        if match:
+            price_str = match.group(1).replace(',', '')
+            return float(price_str)
+        else:
+            # デバッグ用に取得したテキストの一部をログに出す
+            print(f"Debug: Text found around matches: {clean_text[:100]}")
+    except Exception as e:
+        print(f"Fetch Error: {e}")
+    return None
         if match:
             return float(match.group(1).replace(',', ''))
     except Exception as e:
