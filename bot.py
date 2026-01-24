@@ -150,7 +150,7 @@ def handle_yoso_prediction(token, application_id):
         }
         json_data = {"embeds": [embed]}
     else:
-        json_data = {"content": "落ち着いてください、少し休憩しましょう。"}
+        json_data = {"content": "落ち着いて、少し休憩しましょう。"}
 
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json=json_data)
