@@ -115,8 +115,8 @@ def analyze_logic(history):
 # ==========================================
 
 def background_monitor():
-    """15分(900秒)おきにチェックして負荷を軽減"""
-    print("✅ 株価監視: 15分間隔モード起動")
+    """45分(2700秒)おきにチェックして負荷を軽減"""
+    print("✅ 株価監視: 45分間隔")
     while True:
         price = fetch_stock_price_sync()
         if price:
