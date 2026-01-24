@@ -38,8 +38,8 @@ def get_anime_data(search_query=None, season_key=None, count=10):
         params['filter_title'] = search_query
     elif season_key:
         params['filter_season'] = f"{datetime.now().year}-{SEASON_MAP[season_key]}"
-    try:
-    def fetch_stock_price_sync():  
+        
+   def fetch_stock_price_sync():  
     """より確実に数字を抜き出す修正版"""  
     try:  
         headers = {  
@@ -59,7 +59,7 @@ def get_anime_data(search_query=None, season_key=None, count=10):
             print(f"Debug: Text found around matches: {clean_text[:100]}")  
     except Exception as e:  
         print(f"Fetch Error: {e}")  
-    return None  
+    return None
 
     except Exception as
         if match:
