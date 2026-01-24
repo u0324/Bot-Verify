@@ -131,7 +131,7 @@ def background_monitor():
                 if len(price_history) > 100:
                     price_history.pop(0)
             print(f"Monitor update: {price}")
-        time.sleep(300)
+        time.sleep(900)
 
 def handle_yoso_prediction(token, application_id):
     price = fetch_stock_price_sync()
