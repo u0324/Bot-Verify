@@ -50,7 +50,8 @@ def get_anime_data(search_query=None, season_key=None, count=10):
 
         # 1. まずHTMLタグを除去してテキストだけにする
         clean_text = re.sub(r'<[^>]+>', ' ', content)
-        
+        IndentationError: expected an indented block after 'with' statement on line 52  
+
         # 2. 数字 + (空白) + コイン/coin のパターンをより広く探す
         # カンマがあってもなくても、小数があってもなくても対応
         match = re.search(r'([\d,.]+)\s*(?:コイン|coin|Coin)', clean_text)
