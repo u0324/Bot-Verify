@@ -27,48 +27,22 @@ price_history = []
 history_lock = threading.Lock()
 
 # ==========================================
-# 0. コマンド登録用関数 (起動時に自動実行)
+# 0. コマンド登録用関数
 # ==========================================
 def register_commands():
     url = f"https://discord.com/api/v10/applications/{APPLICATION_ID}/commands"
     commands = [
-        {
-            "name": "yoso",
-            "description": "精密株価予想をします",
-            "options": [{"name": "price", "description": "現在の株価を入力", "type": 4, "required": True}]
-        },
-        {
-            "name": "anime",
-            "description": "アニメ情報を取得します",
-            "options": [
-                {
-                    "name": "season",
-                    "description": "季節を選択",
-                    "type": 3,
-                    "choices": [
-                        {"name": "春", "value": "spring"},
-                        {"name": "夏", "value": "summer"},
-                        {"name": "秋", "value": "fall"},
-                        {"name": "冬", "value": "winter"}
-                    ]
-                }
-            ]
-        },
-        {
-            "name": "service",
-            "description": "アニメを検索します",
-            "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]
-        }
+        {"name": "yoso", "description": "精密株価予想をします", "options": [{"name": "price", "description": "現在の株価を入力", "type": 4, "required": True}]},
+        {"name": "anime", "description": "アニメ情報を取得します", "options": [{"name": "season", "description": "季節を選択", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
+        {"name": "service", "description": "アニメを検索します", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
     ]
     headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
     time.sleep(5)
     for cmd in commands:
-        res = requests.post(url, json=cmd, headers=headers)
-        if res.status_code in [200, 201]:
-            print(f"✅ コマンド登録成功: /{cmd['name']}")
+        requests.post(url, json=cmd, headers=headers)
 
 # ==========================================
-# 1. ロジック部分 (アニメ & 精密AI)
+# 1. ロジック部分
 # ==========================================
 def get_anime_data(search_query=None, season_key=None, count=10):
     url = "https://api.annict.com/v1/works"
@@ -85,7 +59,6 @@ def analyze_logic(history):
         return f"データ蓄積中... (残り {7 - len(history)}件)", 0.0, 50.0
 
     df = pd.DataFrame(history, columns=['price'])
-    # 指標計算
     df['diff_1'] = df['price'].diff(1)
     ma5 = df['price'].rolling(window=5).mean()
     df['deviation'] = (df['price'] - ma5) / ma5 * 100
@@ -95,12 +68,10 @@ def analyze_logic(history):
     X = np.array(range(len(train_df))).reshape(-1, 1)
     y = train_df['price'].values
 
-    # ランダムフォレストによる学習と予測
     model = RandomForestRegressor(n_estimators=50, max_depth=5, random_state=42)
     model.fit(X, y)
     predicted_price = model.predict(np.array([[len(df)]]))[0]
     
-    # RSI計算
     delta = df['price'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=7).mean().iloc[-1]
     loss = (-delta.where(delta < 0, 0)).rolling(window=7).mean().iloc[-1]
@@ -110,7 +81,6 @@ def analyze_logic(history):
     diff = predicted_price - current_price
     volatility = np.std(history[-5:])
 
-    # 判定ロジック
     score = 0
     if diff > 0.3: score += 1
     if diff < -0.3: score -= 1
@@ -129,9 +99,9 @@ def analyze_logic(history):
     return status, diff, rsi
 
 # ==========================================
-# 2. Webhook返信処理 (非同期)
+# 2. Webhook返信 (非同期)
 # ==========================================
-def handle_yoso_prediction_manual(token, application_id, manual_price):
+def handle_yoso_prediction(token, application_id, manual_price):
     with history_lock:
         price_history.append(float(manual_price))
         if len(price_history) > 100: price_history.pop(0)
@@ -141,7 +111,7 @@ def handle_yoso_prediction_manual(token, application_id, manual_price):
     
     embed = {
         "title": "💎 超精密 AI株価診断",
-        "description": f"最新価格 **{manual_price:,.1f}** を含む直近データを分析しました。",
+        "description": f"最新価格 **{manual_price:,.1f}** を分析しました。",
         "color": 0x5865F2,
         "fields": [
             {"name": "🤖 総合判定", "value": f"**{status}**", "inline": True},
@@ -150,13 +120,14 @@ def handle_yoso_prediction_manual(token, application_id, manual_price):
             {"name": "📈 変動幅予想", "value": f"{diff:+.2f}", "inline": True},
             {"name": "📊 蓄積データ数", "value": f"{len(current_history)} 件", "inline": True}
         ],
-        "footer": {"text": "RandomForest + 移動平均乖離率ロジック搭載"}
+        "footer": {"text": "RandomForest + 多角指標分析モデル"}
     }
+    # 既存のメッセージをパッチ（編集）する
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"embeds": [embed]})
 
 # ==========================================
-# 3. Flask Endpoint (Interaction)
+# 3. Flask Endpoint
 # ==========================================
 @app.route('/', methods=['POST'])
 def interactions():
@@ -174,27 +145,25 @@ def interactions():
         options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
 
         if cmd_name == 'anime':
-            season = options.get('season')
-            works = get_anime_data(season_key=season)
+            works = get_anime_data(season_key=options.get('season'))
             if not works: return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ データなし"}})
             embeds = [{"title": f"{i+1}. {work['title']}", "url": work.get('official_site_url') or f"https://annict.com/works/{work['id']}", "color": 0x3498db} for i, work in enumerate(works[:10])]
             return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'embeds': embeds}})
 
         elif cmd_name == 'service':
-            work_name = options.get('work_name')
-            works = get_anime_data(search_query=work_name, count=3)
+            works = get_anime_data(search_query=options.get('work_name'), count=3)
             if not works: return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ なし"}})
             embeds = [{"title": w['title'], "description": f"[Google](https://www.google.com/search?q={urllib.parse.quote(w['title'])}+アニメ)", "color": 0xe74c3c} for w in works]
             return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'embeds': embeds}})
 
         elif cmd_name == 'yoso':
+            # ここが重要：まず「DEFERRED（保留）」を返し、裏で計算を開始する
             manual_price = options.get('price')
-            threading.Thread(target=handle_yoso_prediction_manual, args=(data.get('token'), APPLICATION_ID, manual_price)).start()
+            threading.Thread(target=handle_yoso_prediction, args=(data.get('token'), APPLICATION_ID, manual_price)).start()
             return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
 
     return jsonify({'type': InteractionResponseType.PONG})
 
 if __name__ == '__main__':
     threading.Thread(target=register_commands).start()
-    port = int(os.environ.get("PORT", 8080)) 
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
