@@ -34,7 +34,7 @@ def register_commands():
     commands = [
         {
             "name": "yoso",
-            "description": "精密株価予想をします",
+            "description": "カカポの株価予想をします",
             "options": [{"name": "price", "description": "現在の株価を入力", "type": 4, "required": True}]
         },
         {
@@ -147,8 +147,8 @@ def handle_yoso_prediction(token, application_id, manual_price):
     status, diff, rsi = analyze_logic(current_history)
     
     embed = {
-        "title": "💎 超精密 AI株価診断",
-        "description": f"最新価格 **{manual_price:,.1f}** を分析しました。",
+        "title": "💎 カカポ株価　AI診断",
+        "description": f"現在価格 **{manual_price:,.1f}** を分析しました。",
         "color": 0x5865F2,
         "fields": [
             {"name": "🤖 総合判定", "value": f"**{status}**", "inline": True},
