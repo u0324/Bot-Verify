@@ -107,7 +107,7 @@ def analyze_logic(history):
 # ==========================================
 
 def background_monitor():
-    print("✅ 株価監視: 45分間隔起動")
+    print("✅ 株価監視")
     while True:
         price = fetch_stock_price_sync()
         if price:
@@ -115,7 +115,7 @@ def background_monitor():
                 price_history.append(price)
                 if len(price_history) > 100: price_history.pop(0)
             print(f"Update: {price}")
-        time.sleep(2700)
+        time.sleep(7200)
 
 def handle_yoso_prediction(token, application_id):
     price = fetch_stock_price_sync()
