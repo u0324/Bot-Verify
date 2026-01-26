@@ -130,7 +130,7 @@ def handle_prediction_async(token, application_id, manual_price):
 
     embed = {
         "title": "🕊️ カカポ株価　AI診断",
-        "description": f"最新価格 **{int(manual_price)}** を分析。再起動に強いDBを搭載しました。",
+        "description": f"最新価格 **{int(manual_price)}** を分析。",
         "color": 0x5865F2,
         "fields": [
             {"name": "🤖 総合判定", "value": f"**{status}**", "inline": False},
