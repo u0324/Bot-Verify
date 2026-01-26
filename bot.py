@@ -98,7 +98,7 @@ def analyze_logic():
 
     if diff >= 10 or score >= 3: status = "強力な上昇サイン 🚀"
     elif 1 <= diff <= 3 or score >= 1: status = "緩やかな上昇見込み 📈"
-    elif diff <= -10 or score <= -3: status = "暴落注意・売り推奨 📉"
+    elif diff <= -10 or score <= -3: status = "暴落注意 📉"
     elif -3 <= diff <= -1 or score <= -1: status = "緩やかな下落見込み 📉"
     else: status = "方向感の探り合い ➡️"
 
@@ -183,7 +183,7 @@ def interactions():
             if not is_admin:
                 return jsonify({
                     'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                    'data': {'content': "⚠️ このコマンドは管理者専用やで！触らんといてな！", 'flags': 64} # 64は「自分にだけ見える」設定
+                    'data': {'content': "⚠️ このコマンドは管理者専用です", 'flags': 64} # 64は「自分にだけ見える」設定
                 })
             
             options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
@@ -226,8 +226,8 @@ def register_commands():
 
     # 2. 最新のコマンドリストを登録 (誰でもメニューには出る設定)
     commands = [
-        {"name": "prediction", "description": "カカポの株価を予測します (管理者専用)", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
-        {"name": "show_data", "description": "最新5件のデータを確認 (管理者専用)"},
+        {"name": "prediction", "description": "カカポの株価を予測します", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
+        {"name": "show_data", "description": "最新5件のデータを確認"},
         {"name": "anime", "description": "今期のアニメ情報", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
         {"name": "service", "description": "アニメを検索", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
     ]
