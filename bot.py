@@ -178,8 +178,6 @@ def interactions():
 
         # 179行目からを以下に差し替え
         permissions = int(data.get('member', {}).get('permissions', 0))
-        
-        # 実行者のIDを直接取得して判定
         sender_id = data.get('member', {}).get('user', {}).get('id') or data.get('user', {}).get('id')
         is_admin = (permissions & 8) == 8 or sender_id == YOUR_USER_ID
         
