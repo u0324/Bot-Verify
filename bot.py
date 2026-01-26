@@ -177,9 +177,9 @@ def interactions():
         cmd_name = data['data']['name']
 
         user_id = 
-        date.get('member', {}).get('user',
-                                   {}).get('id') or date.get('user',
-                                                             {}).get('id')
+        data.get('member', {}).get('user',
+        {}).get('id') or date.get('user',
+        {}).get('id')
         
         # 管理者権限(8)を持っているかチェック
         permissions = int(data.get('member', {}).get('permissions', 0))
