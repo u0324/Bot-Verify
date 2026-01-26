@@ -21,6 +21,8 @@ DISCORD_PUBLIC_KEY = os.getenv('DISCORD_PUBLIC_KEY')
 ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
 APPLICATION_ID = os.getenv('APPLICATION_ID') 
 DISCORD_BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+YOUR_USER_ID =
+os.getenv('YOUR_USER_ID')
 
 # --- 設定 ---
 SEASON_MAP = {'spring': 'spring', 'summer': 'summer', 'fall': 'autumn', 'winter': 'winter'}
@@ -174,9 +176,15 @@ def interactions():
 
     if data.get('type') == InteractionType.APPLICATION_COMMAND:
         cmd_name = data['data']['name']
+
+        user_id = 
+        date.get('member', {}).get('user',
+                                   {}).get('id') or date.get('user',
+                                                             {}).get('id')
+        
         # 管理者権限(8)を持っているかチェック
         permissions = int(data.get('member', {}).get('permissions', 0))
-        is_admin = (permissions & 8) == 8
+        is_admin = (permissions & 8) == 8 or user_id == YOUR_USER_ID
 
         # 権限が必要なコマンド
         if cmd_name in ['prediction', 'show_data']:
