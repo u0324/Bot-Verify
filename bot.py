@@ -30,7 +30,7 @@ timezone_jp = pytz.timezone('Asia/Tokyo')
 # 0. データベース操作 (PostgreSQL版)
 # ==========================================
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    return psycopg2.connect(DATABASE_URL)
 
 def init_db():
     conn = get_db_connection()
