@@ -30,6 +30,7 @@ timezone_jp = pytz.timezone('Asia/Tokyo')
 # 0. データベース操作 (PostgreSQL版)
 # ==========================================
 def get_db_connection():
+    # 以前の接続エラーを回避するため sslmode は指定せず、DATABASE_URLのみを使用
     return psycopg2.connect(DATABASE_URL)
 
 def init_db():
@@ -95,7 +96,7 @@ def analyze_logic():
     current_price = df['price'].iloc[-1]
     diff = predicted_price - current_price
 
-    # スコア計算 (以前のロジック合算)
+    # スコア計算
     score = 0.0
     if diff >= 5: score += 2.0
     elif diff >= 1: score += 1.0
@@ -103,7 +104,6 @@ def analyze_logic():
     if rsi > 70: score -= 1.5
     if last_row['deviation'] < -2: score += 1.0
 
-    # 指定通りの厳格判定
     if diff >= 10 or score >= 3:
         status = "強力な上昇サイン 🚀"
     elif 1 <= diff <= 3 or score >= 1:
@@ -124,7 +124,6 @@ def handle_prediction_async(token, application_id, manual_price):
     save_price(float(manual_price))
     status, diff, rsi, score = analyze_logic()
     
-    # 現在の総件数を確認
     df_current = load_history()
     count = len(df_current)
 
@@ -145,7 +144,37 @@ def handle_prediction_async(token, application_id, manual_price):
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"embeds": [embed]})
 
-# --- アニメ検索 (維持) ---
+# 追加機能: 履歴確認用
+def handle_show_data_async(token, application_id):
+    conn = get_db_connection()
+    with conn.cursor(cursor_factory=DictCursor) as cur:
+        # 最新5件を取得
+        cur.execute("SELECT timestamp, price FROM history ORDER BY timestamp DESC LIMIT 5")
+        rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        content = "📚 まだ蓄積されたデータはありません。"
+        embeds = []
+    else:
+        content = "📚 **最新5件の蓄積データ**"
+        data_list = ""
+        for row in rows:
+            # 日本時間に変換して表示
+            ts_jp = row['timestamp'].astimezone(timezone_jp)
+            data_list += f"📅 {ts_jp.strftime('%m/%d %H:%M')} | 価格: **{int(row['price'])}**\n"
+        
+        embeds = [{
+            "title": "データ履歴",
+            "description": data_list,
+            "color": 0x2ecc71,
+            "footer": {"text": "これに基づきAIが学習します"}
+        }]
+
+    url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
+    requests.patch(url, json={"content": content, "embeds": embeds})
+
+# --- アニメ検索 ---
 def get_anime_data(search_query=None, season_key=None, count=10):
     url = "https://api.annict.com/v1/works"
     params = {'access_token': ANNICT_TOKEN, 'sort_watchers_count': 'desc', 'per_page': count}
@@ -179,6 +208,10 @@ def interactions():
             threading.Thread(target=handle_prediction_async, args=(data.get('token'), APPLICATION_ID, manual_price)).start()
             return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
 
+        elif cmd_name == 'show_data':
+            threading.Thread(target=handle_show_data_async, args=(data.get('token'), APPLICATION_ID)).start()
+            return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
+
         elif cmd_name == 'anime':
             works = get_anime_data(season_key=options.get('season'))
             if not works: return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ データなし"}})
@@ -197,6 +230,7 @@ def register_commands():
     url = f"https://discord.com/api/v10/applications/{APPLICATION_ID}/commands"
     commands = [
         {"name": "prediction", "description": "カカポの株価を予測します", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
+        {"name": "show_data", "description": "最新5件の蓄積データを確認します"},
         {"name": "anime", "description": "今期のアニメ情報を表示します", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
         {"name": "service", "description": "アニメを検索します", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
     ]
