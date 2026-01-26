@@ -27,16 +27,14 @@ SEASON_MAP = {'spring': 'spring', 'summer': 'summer', 'fall': 'autumn', 'winter'
 timezone_jp = pytz.timezone('Asia/Tokyo')
 
 # ==========================================
-# 0. データベース操作 (PostgreSQL版)
+# 0. データベース操作
 # ==========================================
 def get_db_connection():
-    # 以前の接続エラーを回避するため sslmode は指定せず、DATABASE_URLのみを使用
     return psycopg2.connect(DATABASE_URL)
 
 def init_db():
     conn = get_db_connection()
     with conn.cursor() as cur:
-        # 永続的なテーブル作成
         cur.execute('''CREATE TABLE IF NOT EXISTS history 
                        (timestamp TIMESTAMPTZ, price FLOAT, month INT, day INT, hour INT)''')
     conn.commit()
@@ -58,15 +56,13 @@ def load_history():
     return df
 
 # ==========================================
-# 1. 精密AIロジック (統合・強化版)
+# 1. 精密AIロジック
 # ==========================================
 def analyze_logic():
     df = load_history()
-    
     if len(df) < 7:
         return f"蓄積中({len(df)}/7)", 0, 50, 0.0
 
-    # 特徴量計算
     df['diff_1'] = df['price'].diff(1)
     ma5 = df['price'].rolling(window=5).mean()
     df['deviation'] = (df['price'] - ma5) / ma5 * 100
@@ -77,17 +73,14 @@ def analyze_logic():
     X = train_df[features].values
     y = train_df['price'].values
 
-    # AIモデル (RandomForest)
     model = RandomForestRegressor(n_estimators=100, max_depth=7, random_state=42)
     model.fit(X, y)
     
     now = datetime.now(timezone_jp)
     last_row = df.iloc[-1]
     current_features = np.array([[now.month, now.day, now.hour, last_row['deviation'], last_row['momentum']]])
-    
     predicted_price = model.predict(current_features)[0]
     
-    # RSI計算
     delta = df['price'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=min(len(df), 14)).mean().iloc[-1]
     loss = (-delta.where(delta < 0, 0)).rolling(window=min(len(df), 14)).mean().iloc[-1]
@@ -96,7 +89,6 @@ def analyze_logic():
     current_price = df['price'].iloc[-1]
     diff = predicted_price - current_price
 
-    # スコア計算
     score = 0.0
     if diff >= 5: score += 2.0
     elif diff >= 1: score += 1.0
@@ -104,16 +96,11 @@ def analyze_logic():
     if rsi > 70: score -= 1.5
     if last_row['deviation'] < -2: score += 1.0
 
-    if diff >= 10 or score >= 3:
-        status = "強力な上昇サイン 🚀"
-    elif 1 <= diff <= 3 or score >= 1:
-        status = "緩やかな上昇見込み 📈"
-    elif diff <= -10 or score <= -3:
-        status = "暴落注意・売り推奨 📉"
-    elif -3 <= diff <= -1 or score <= -1:
-        status = "緩やかな下落見込み 📉"
-    else:
-        status = "方向感の探り合い ➡️"
+    if diff >= 10 or score >= 3: status = "強力な上昇サイン 🚀"
+    elif 1 <= diff <= 3 or score >= 1: status = "緩やかな上昇見込み 📈"
+    elif diff <= -10 or score <= -3: status = "暴落注意・売り推奨 📉"
+    elif -3 <= diff <= -1 or score <= -1: status = "緩やかな下落見込み 📉"
+    else: status = "方向感の探り合い ➡️"
 
     return status, int(round(diff)), int(round(rsi)), score
 
@@ -123,7 +110,6 @@ def analyze_logic():
 def handle_prediction_async(token, application_id, manual_price):
     save_price(float(manual_price))
     status, diff, rsi, score = analyze_logic()
-    
     df_current = load_history()
     count = len(df_current)
 
@@ -144,11 +130,9 @@ def handle_prediction_async(token, application_id, manual_price):
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"embeds": [embed]})
 
-# 追加機能: 履歴確認用
 def handle_show_data_async(token, application_id):
     conn = get_db_connection()
     with conn.cursor(cursor_factory=DictCursor) as cur:
-        # 最新5件を取得
         cur.execute("SELECT timestamp, price FROM history ORDER BY timestamp DESC LIMIT 5")
         rows = cur.fetchall()
     conn.close()
@@ -158,23 +142,12 @@ def handle_show_data_async(token, application_id):
         embeds = []
     else:
         content = "📚 **最新5件の蓄積データ**"
-        data_list = ""
-        for row in rows:
-            # 日本時間に変換して表示
-            ts_jp = row['timestamp'].astimezone(timezone_jp)
-            data_list += f"📅 {ts_jp.strftime('%m/%d %H:%M')} | 価格: **{int(row['price'])}**\n"
-        
-        embeds = [{
-            "title": "データ履歴",
-            "description": data_list,
-            "color": 0x2ecc71,
-            "footer": {"text": "これに基づきAIが学習します"}
-        }]
+        data_list = "".join([f"📅 {r['timestamp'].astimezone(timezone_jp).strftime('%m/%d %H:%M')} | 価格: **{int(r['price'])}**\n" for r in rows])
+        embeds = [{"title": "データ履歴", "description": data_list, "color": 0x2ecc71, "footer": {"text": "AI学習用"}}]
 
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"content": content, "embeds": embeds})
 
-# --- アニメ検索 ---
 def get_anime_data(search_query=None, season_key=None, count=10):
     url = "https://api.annict.com/v1/works"
     params = {'access_token': ANNICT_TOKEN, 'sort_watchers_count': 'desc', 'per_page': count}
@@ -186,7 +159,7 @@ def get_anime_data(search_query=None, season_key=None, count=10):
     except: return []
 
 # ==========================================
-# 3. Flask & コマンド登録
+# 3. Flask & コマンド処理
 # ==========================================
 @app.route('/', methods=['POST'])
 def interactions():
@@ -201,24 +174,35 @@ def interactions():
 
     if data.get('type') == InteractionType.APPLICATION_COMMAND:
         cmd_name = data['data']['name']
-        options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
+        # 管理者権限(8)を持っているかチェック
+        permissions = int(data.get('member', {}).get('permissions', 0))
+        is_admin = (permissions & 8) == 8
 
-        if cmd_name == 'prediction':
-            manual_price = options.get('price')
-            threading.Thread(target=handle_prediction_async, args=(data.get('token'), APPLICATION_ID, manual_price)).start()
+        # 権限が必要なコマンド
+        if cmd_name in ['prediction', 'show_data']:
+            if not is_admin:
+                return jsonify({
+                    'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                    'data': {'content': "⚠️ このコマンドは管理者専用やで！触らんといてな！", 'flags': 64} # 64は「自分にだけ見える」設定
+                })
+            
+            options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
+            if cmd_name == 'prediction':
+                threading.Thread(target=handle_prediction_async, args=(data.get('token'), APPLICATION_ID, options.get('price'))).start()
+            else:
+                threading.Thread(target=handle_show_data_async, args=(data.get('token'), APPLICATION_ID)).start()
             return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
 
-        elif cmd_name == 'show_data':
-            threading.Thread(target=handle_show_data_async, args=(data.get('token'), APPLICATION_ID)).start()
-            return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
-
+        # 公開コマンド
         elif cmd_name == 'anime':
+            options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
             works = get_anime_data(season_key=options.get('season'))
             if not works: return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ データなし"}})
             embeds = [{"title": f"{i+1}. {work['title']}", "url": work.get('official_site_url'), "color": 0x3498db} for i, work in enumerate(works[:10])]
             return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'embeds': embeds}})
 
         elif cmd_name == 'service':
+            options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
             works = get_anime_data(search_query=options.get('work_name'), count=3)
             if not works: return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ なし"}})
             embeds = [{"title": w['title'], "description": f"[Google](https://www.google.com/search?q={urllib.parse.quote(w['title'])}+アニメ)", "color": 0xe74c3c} for w in works]
@@ -227,16 +211,27 @@ def interactions():
     return jsonify({'type': InteractionResponseType.PONG})
 
 def register_commands():
-    url = f"https://discord.com/api/v10/applications/{APPLICATION_ID}/commands"
-    commands = [
-        {"name": "prediction", "description": "カカポの株価を予測します", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
-        {"name": "show_data", "description": "最新5件の蓄積データを確認します"},
-        {"name": "anime", "description": "今期のアニメ情報を表示します", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
-        {"name": "service", "description": "アニメを検索します", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
-    ]
+    base_url = f"https://discord.com/api/v10/applications/{APPLICATION_ID}/commands"
     headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
     time.sleep(5)
-    for cmd in commands: requests.post(url, json=cmd, headers=headers)
+    
+    # 1. まず古い /yoso コマンドを探して消す
+    try:
+        existing_cmds = requests.get(base_url, headers=headers).json()
+        for c in existing_cmds:
+            if c['name'] == 'yoso':
+                requests.delete(f"{base_url}/{c['id']}", headers=headers)
+                print("Old /yoso command deleted.")
+    except: pass
+
+    # 2. 最新のコマンドリストを登録 (誰でもメニューには出る設定)
+    commands = [
+        {"name": "prediction", "description": "カカポの株価を予測します (管理者専用)", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
+        {"name": "show_data", "description": "最新5件のデータを確認 (管理者専用)"},
+        {"name": "anime", "description": "今期のアニメ情報", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
+        {"name": "service", "description": "アニメを検索", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
+    ]
+    for cmd in commands: requests.post(base_url, json=cmd, headers=headers)
 
 if __name__ == '__main__':
     init_db()
