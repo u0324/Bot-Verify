@@ -3,7 +3,8 @@ import requests
 import urllib.parse
 import threading
 import time
-import sqlite3
+import psycopg2 # PostgreSQL用
+from psycopg2.extras import DictCursor
 import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, request
@@ -15,6 +16,7 @@ from sklearn.ensemble import RandomForestRegressor
 app = Flask(__name__)
 
 # --- Secrets ---
+DATABASE_URL = os.getenv('DATABASE_URL') 
 DISCORD_PUBLIC_KEY = os.getenv('DISCORD_PUBLIC_KEY')
 ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
 APPLICATION_ID = os.getenv('APPLICATION_ID') 
@@ -22,38 +24,46 @@ DISCORD_BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 
 # --- 設定 ---
 SEASON_MAP = {'spring': 'spring', 'summer': 'summer', 'fall': 'autumn', 'winter': 'winter'}
-DB_PATH = 'stock_data.db'
 timezone_jp = pytz.timezone('Asia/Tokyo')
 
 # ==========================================
-# 0. データベース操作 (永続化)
+# 0. データベース操作 (PostgreSQL版)
 # ==========================================
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
+
 def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute('''CREATE TABLE IF NOT EXISTS history 
-                        (timestamp TEXT, price REAL, month INTEGER, day INTEGER, hour INTEGER)''')
-        conn.commit()
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        # 永続的なテーブル作成
+        cur.execute('''CREATE TABLE IF NOT EXISTS history 
+                       (timestamp TIMESTAMPTZ, price FLOAT, month INT, day INT, hour INT)''')
+    conn.commit()
+    conn.close()
 
 def save_price(price):
     now = datetime.now(timezone_jp)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)",
-                     (now.isoformat(), price, now.month, now.day, now.hour))
-        conn.commit()
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO history (timestamp, price, month, day, hour) VALUES (%s, %s, %s, %s, %s)",
+                    (now, price, now.month, now.day, now.hour))
+    conn.commit()
+    conn.close()
 
 def load_history():
-    with sqlite3.connect(DB_PATH) as conn:
-        df = pd.read_sql_query("SELECT * FROM history ORDER BY timestamp ASC", conn)
+    conn = get_db_connection()
+    df = pd.read_sql_query("SELECT * FROM history ORDER BY timestamp ASC", conn)
+    conn.close()
     return df
 
 # ==========================================
-# 1. 精密AIロジック (判定基準の厳格化)
+# 1. 精密AIロジック (統合・強化版)
 # ==========================================
 def analyze_logic():
     df = load_history()
     
     if len(df) < 7:
-        return f"データ蓄積中... ({len(df)}/7)", 0, 50
+        return f"蓄積中({len(df)}/7)", 0, 50, 0.0
 
     # 特徴量計算
     df['diff_1'] = df['price'].diff(1)
@@ -66,7 +76,7 @@ def analyze_logic():
     X = train_df[features].values
     y = train_df['price'].values
 
-    # AIモデル
+    # AIモデル (RandomForest)
     model = RandomForestRegressor(n_estimators=100, max_depth=7, random_state=42)
     model.fit(X, y)
     
@@ -76,7 +86,7 @@ def analyze_logic():
     
     predicted_price = model.predict(current_features)[0]
     
-    # RSI
+    # RSI計算
     delta = df['price'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=min(len(df), 14)).mean().iloc[-1]
     loss = (-delta.where(delta < 0, 0)).rolling(window=min(len(df), 14)).mean().iloc[-1]
@@ -85,25 +95,57 @@ def analyze_logic():
     current_price = df['price'].iloc[-1]
     diff = predicted_price - current_price
 
-    # --- 指定通りの厳格判定ロジック ---
-    if diff >= 10:
+    # スコア計算 (以前のロジック合算)
+    score = 0.0
+    if diff >= 5: score += 2.0
+    elif diff >= 1: score += 1.0
+    if rsi < 30: score += 1.5
+    if rsi > 70: score -= 1.5
+    if last_row['deviation'] < -2: score += 1.0
+
+    # 指定通りの厳格判定
+    if diff >= 10 or score >= 3:
         status = "強力な上昇サイン 🚀"
-    elif 1 <= diff <= 3:
+    elif 1 <= diff <= 3 or score >= 1:
         status = "緩やかな上昇見込み 📈"
-    elif diff <= -10:
+    elif diff <= -10 or score <= -3:
         status = "暴落注意・売り推奨 📉"
-    elif -3 <= diff <= -1:
+    elif -3 <= diff <= -1 or score <= -1:
         status = "緩やかな下落見込み 📉"
-    elif -1 < diff < 1:
-        status = "安定・停滞相場 ➡️"
     else:
         status = "方向感の探り合い ➡️"
 
-    return status, int(round(diff)), int(round(rsi))
+    return status, int(round(diff)), int(round(rsi)), score
 
 # ==========================================
-# 2. Discord機能 (非同期処理)
+# 2. Discord機能
 # ==========================================
+def handle_prediction_async(token, application_id, manual_price):
+    save_price(float(manual_price))
+    status, diff, rsi, score = analyze_logic()
+    
+    # 現在の総件数を確認
+    df_current = load_history()
+    count = len(df_current)
+
+    embed = {
+        "title": "🕊️ カカポ株価　AI診断",
+        "description": f"最新価格 **{int(manual_price)}** を分析。再起動に強いDBを搭載しました。",
+        "color": 0x5865F2,
+        "fields": [
+            {"name": "🤖 総合判定", "value": f"**{status}**", "inline": False},
+            {"name": "🎯 次回予測価格", "value": f"{int(manual_price + diff)}", "inline": True},
+            {"name": "🌡️ RSI (熱感)", "value": f"{rsi}%", "inline": True},
+            {"name": "📈 変動幅予想", "value": f"{diff:+d}", "inline": True},
+            {"name": "📊 テクニカルスコア", "value": f"{score:+.1f}", "inline": True},
+            {"name": "📚 蓄積データ数", "value": f"{count} 件", "inline": True}
+        ],
+        "footer": {"text": "カカポ大好きやで"}
+    }
+    url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
+    requests.patch(url, json={"embeds": [embed]})
+
+# --- アニメ検索 (維持) ---
 def get_anime_data(search_query=None, season_key=None, count=10):
     url = "https://api.annict.com/v1/works"
     params = {'access_token': ANNICT_TOKEN, 'sort_watchers_count': 'desc', 'per_page': count}
@@ -113,29 +155,6 @@ def get_anime_data(search_query=None, season_key=None, count=10):
         res = requests.get(url, params=params, timeout=10).json()
         return res.get('works', [])
     except: return []
-
-def handle_yoso_prediction(token, application_id, manual_price):
-    save_price(float(manual_price))
-    status, diff, rsi = analyze_logic()
-    
-    with sqlite3.connect(DB_PATH) as conn:
-        count = conn.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-
-    embed = {
-        "title": "🕊️ カカポ株価　AI診断",
-        "description": f"最新価格 **{int(manual_price)}** を分析。",
-        "color": 0x5865F2,
-        "fields": [
-            {"name": "🤖 総合判定", "value": f"**{status}**", "inline": True},
-            {"name": "🎯 次回予測価格", "value": f"{int(manual_price + diff)}", "inline": True},
-            {"name": "🌡️ 市場熱感 (RSI)", "value": f"{rsi}%", "inline": True},
-            {"name": "📈 変動幅予想", "value": f"{diff:+d}", "inline": True},
-            {"name": "📊 学習データ数", "value": f"{count} 件", "inline": True}
-        ],
-        "footer": {"text": "カカポ大好きやで"}
-    }
-    url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
-    requests.patch(url, json={"embeds": [embed]})
 
 # ==========================================
 # 3. Flask & コマンド登録
@@ -155,7 +174,12 @@ def interactions():
         cmd_name = data['data']['name']
         options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
 
-        if cmd_name == 'anime':
+        if cmd_name == 'prediction':
+            manual_price = options.get('price')
+            threading.Thread(target=handle_prediction_async, args=(data.get('token'), APPLICATION_ID, manual_price)).start()
+            return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
+
+        elif cmd_name == 'anime':
             works = get_anime_data(season_key=options.get('season'))
             if not works: return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ データなし"}})
             embeds = [{"title": f"{i+1}. {work['title']}", "url": work.get('official_site_url'), "color": 0x3498db} for i, work in enumerate(works[:10])]
@@ -166,11 +190,6 @@ def interactions():
             if not works: return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ なし"}})
             embeds = [{"title": w['title'], "description": f"[Google](https://www.google.com/search?q={urllib.parse.quote(w['title'])}+アニメ)", "color": 0xe74c3c} for w in works]
             return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'embeds': embeds}})
-
-        elif cmd_name == 'prediction':
-            manual_price = options.get('price')
-            threading.Thread(target=handle_yoso_prediction, args=(data.get('token'), APPLICATION_ID, manual_price)).start()
-            return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
 
     return jsonify({'type': InteractionResponseType.PONG})
 
