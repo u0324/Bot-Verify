@@ -21,8 +21,7 @@ DISCORD_PUBLIC_KEY = os.getenv('DISCORD_PUBLIC_KEY')
 ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
 APPLICATION_ID = os.getenv('APPLICATION_ID') 
 DISCORD_BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
-YOUR_USER_ID =
-os.getenv('YOUR_USER_ID')
+YOUR_USER_ID = '1421704357983813744'
 
 # --- 設定 ---
 SEASON_MAP = {'spring': 'spring', 'summer': 'summer', 'fall': 'autumn', 'winter': 'winter'}
