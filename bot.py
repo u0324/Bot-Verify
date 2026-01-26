@@ -207,18 +207,20 @@ def interactions():
     if data.get('type') == InteractionType.PING:
         return jsonify({'type': InteractionResponseType.PONG})
 
-    # --- 管理者判定ロジック ---
+    # --- 開発者（あなた）限定の判定ロジック ---
+    # 送信者のユーザーIDを取得
     member = data.get('member', {})
     user = member.get('user', {}) or data.get('user', {})
     sender_id = user.get('id')
-    permissions = int(member.get('permissions', 0))
-    is_admin = (permissions & 8) == 8 or sender_id == YOUR_USER_ID
+    
+    # あなたのID(YOUR_USER_ID)と一致するかのみを確認
+    is_developer = (sender_id == YOUR_USER_ID)
 
     # --- メニュー選択時の処理 ---
     if data.get('type') == 3: # MESSAGE_COMPONENT
         if data['data']['custom_id'] == "delete_select":
-            if not is_admin:
-                return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ 権限がありません", 'flags': 64}})
+            if not is_developer:
+                return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ 開発者専用の操作です", 'flags': 64}})
             
             selected_ts = data['data']['values'][0]
             conn = get_db_connection()
@@ -235,12 +237,12 @@ def interactions():
     if data.get('type') == InteractionType.APPLICATION_COMMAND:
         cmd_name = data['data']['name']
 
-        # 権限が必要なコマンドのチェック
+        # 開発者専用コマンドのチェック
         if cmd_name in ['prediction', 'show_data', 'delete_dup']:
-            if not is_admin:
+            if not is_developer:
                 return jsonify({
                     'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                    'data': {'content': "⚠️ このコマンドは管理者専用です", 'flags': 64}
+                    'data': {'content': "⚠️ このコマンドは開発者（作成者）専用です", 'flags': 64}
                 })
             
             if cmd_name == 'prediction':
@@ -276,9 +278,9 @@ def register_commands():
     time.sleep(5)
     
     commands = [
-        {"name": "prediction", "description": "株価を予測し保存", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
-        {"name": "show_data", "description": "最新5件のデータを確認"},
-        {"name": "delete_dup", "description": "蓄積データを個別に削除"},
+        {"name": "prediction", "description": "株価を予測し保存 (開発者専用)", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
+        {"name": "show_data", "description": "最新5件のデータを確認 (開発者専用)"},
+        {"name": "delete_dup", "description": "データを個別に削除 (開発者専用)"},
         {"name": "anime", "description": "今期のアニメ情報", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
         {"name": "service", "description": "アニメを検索", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
     ]
