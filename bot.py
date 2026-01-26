@@ -122,8 +122,8 @@ def handle_yoso_prediction(token, application_id, manual_price):
         count = conn.execute("SELECT COUNT(*) FROM history").fetchone()[0]
 
     embed = {
-        "title": "💎 カカポ株価　AI診断",
-        "description": f"最新価格 **{int(manual_price)}** を分析。月日・時間の法則を適用中。",
+        "title": "🕊️ カカポ株価　AI診断",
+        "description": f"最新価格 **{int(manual_price)}** を分析。",
         "color": 0x5865F2,
         "fields": [
             {"name": "🤖 総合判定", "value": f"**{status}**", "inline": True},
@@ -132,7 +132,7 @@ def handle_yoso_prediction(token, application_id, manual_price):
             {"name": "📈 変動幅予想", "value": f"{diff:+d}", "inline": True},
             {"name": "📊 学習データ数", "value": f"{count} 件", "inline": True}
         ],
-        "footer": {"text": "時系列学習モデル：整数表示モード"}
+        "footer": {"text": "カカポ大好きやで"}
     }
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"embeds": [embed]})
@@ -167,7 +167,7 @@ def interactions():
             embeds = [{"title": w['title'], "description": f"[Google](https://www.google.com/search?q={urllib.parse.quote(w['title'])}+アニメ)", "color": 0xe74c3c} for w in works]
             return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'embeds': embeds}})
 
-        elif cmd_name == 'yoso':
+        elif cmd_name == 'prediction':
             manual_price = options.get('price')
             threading.Thread(target=handle_yoso_prediction, args=(data.get('token'), APPLICATION_ID, manual_price)).start()
             return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
@@ -177,9 +177,9 @@ def interactions():
 def register_commands():
     url = f"https://discord.com/api/v10/applications/{APPLICATION_ID}/commands"
     commands = [
-        {"name": "yoso", "description": "精密株価予想", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
-        {"name": "anime", "description": "アニメ情報", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
-        {"name": "service", "description": "アニメ検索", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
+        {"name": "prediction", "description": "カカポの株価を予測します", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
+        {"name": "anime", "description": "今期のアニメ情報を表示します", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
+        {"name": "service", "description": "アニメを検索します", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
     ]
     headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
     time.sleep(5)
