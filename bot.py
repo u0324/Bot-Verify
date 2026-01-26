@@ -183,7 +183,7 @@ def interactions():
 
         if cmd_name in ['prediction', 'show_data', 'delete_latest']:
             if not is_developer:
-                return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ 開発者専用です", 'flags': 64}})
+                return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ 開発者専用コマンドです", 'flags': 64}})
             
             if cmd_name == 'prediction':
                 threading.Thread(target=handle_prediction_async, args=(data.get('token'), APPLICATION_ID, options.get('price'))).start()
@@ -224,11 +224,11 @@ def register_commands():
     headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
     time.sleep(3)
     commands = [
-        {"name": "prediction", "description": "価格予測と保存 (開発者専用)", "options": [{"name": "price", "description": "価格", "type": 4, "required": True}]},
-        {"name": "show_data", "description": "履歴を表示 (開発者専用)"},
-        {"name": "delete_latest", "description": "最新の1件を削除 (開発者専用)"},
-        {"name": "anime", "description": "アニメ情報", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
-        {"name": "service", "description": "アニメ検索", "options": [{"name": "work_name", "description": "作品名", "type": 3, "required": True}]}
+        {"name": "prediction", "description": "カカポの株価を予測します", "options": [{"name": "price", "description": "価格", "type": 4, "required": True}]},
+        {"name": "show_data", "description": "保存したデータの履歴を表示します"},
+        {"name": "delete_latest", "description": "最新のデータ1件を削除します"},
+        {"name": "anime", "description": "今期の人気アニメ情報を表示します", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
+        {"name": "service", "description": "アニメを検索します", "options": [{"name": "work_name", "description": "作品名", "type": 3, "required": True}]}
     ]
     for cmd in commands: requests.post(base_url, json=cmd, headers=headers)
 
