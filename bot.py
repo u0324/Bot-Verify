@@ -176,15 +176,13 @@ def interactions():
     if data.get('type') == InteractionType.APPLICATION_COMMAND:
         cmd_name = data['data']['name']
 
-        user_id = 
-        data.get('member', {}).get('user',
-        {}).get('id') or date.get('user',
-        {}).get('id')
-        
-        # 管理者権限(8)を持っているかチェック
+        # 179行目からを以下に差し替え
         permissions = int(data.get('member', {}).get('permissions', 0))
-        is_admin = (permissions & 8) == 8 or user_id == YOUR_USER_ID
-
+        
+        # 実行者のIDを直接取得して判定
+        sender_id = data.get('member', {}).get('user', {}).get('id') or data.get('user', {}).get('id')
+        is_admin = (permissions & 8) == 8 or sender_id == YOUR_USER_ID
+        
         # 権限が必要なコマンド
         if cmd_name in ['prediction', 'show_data']:
             if not is_admin:
