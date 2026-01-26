@@ -130,8 +130,6 @@ def handle_prediction_async(token, application_id, manual_price):
     }
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"embeds": [embed]})
-    # 選択肢を更新するためにコマンドを再登録
-    register_commands()
 
 def handle_show_data_async(token, application_id):
     conn = get_db_connection()
@@ -175,7 +173,7 @@ def interactions():
     if data.get('type') == InteractionType.PING:
         return jsonify({'type': InteractionResponseType.PONG})
 
-    # --- 開発者（あなた）限定の判定 ---
+    # --- 開発者限定判定 ---
     user = data.get('member', {}).get('user', {}) or data.get('user', {})
     sender_id = user.get('id')
     is_developer = (sender_id == YOUR_USER_ID)
@@ -184,8 +182,7 @@ def interactions():
         cmd_name = data['data']['name']
         options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
 
-        # 開発者専用コマンド
-        if cmd_name in ['prediction', 'show_data', 'delete_dup']:
+        if cmd_name in ['prediction', 'show_data', 'delete_latest']:
             if not is_developer:
                 return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ 開発者専用です", 'flags': 64}})
             
@@ -197,26 +194,22 @@ def interactions():
                 threading.Thread(target=handle_show_data_async, args=(data.get('token'), APPLICATION_ID)).start()
                 return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
 
-            elif cmd_name == 'delete_dup':
-                target_ts = options.get('target')
+            elif cmd_name == 'delete_latest':
                 conn = get_db_connection()
                 with conn.cursor() as cur:
-                    # 秒単位の LIKE で確実に消す
-                    cur.execute("DELETE FROM history WHERE timestamp::text LIKE %s", (f"{target_ts}%",))
+                    # 一番新しいデータを1個だけ削除する最強のSQL
+                    cur.execute("DELETE FROM history WHERE timestamp = (SELECT MAX(timestamp) FROM history)")
                     deleted_count = cur.rowcount
                 conn.commit()
                 conn.close()
-                # 削除後にコマンドの選択肢を最新にする
-                register_commands()
                 return jsonify({
                     'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                    'data': {'content': f"✅ データを削除しました: `{target_ts}`" if deleted_count > 0 else "⚠️ 削除に失敗しました"}
+                    'data': {'content': "✅ 最新のデータを1件削除しました。" if deleted_count > 0 else "⚠️ 削除するデータがありません。"}
                 })
 
-        # 公開コマンド
         elif cmd_name == 'anime':
             works = get_anime_data(season_key=options.get('season'))
-            if not works: return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ データなし"}})
+            if not works: return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ なし"}})
             embeds = [{"title": f"{i+1}. {work['title']}", "url": work.get('official_site_url'), "color": 0x3498db} for i, work in enumerate(works[:10])]
             return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'embeds': embeds}})
 
@@ -231,46 +224,17 @@ def interactions():
 def register_commands():
     base_url = f"https://discord.com/api/v10/applications/{APPLICATION_ID}/commands"
     headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
-    
-    # 最新5件をDBから取得して選択肢を作る
-    delete_choices = []
-    try:
-        conn = get_db_connection()
-        with conn.cursor(cursor_factory=DictCursor) as cur:
-            cur.execute("SELECT timestamp, price FROM history ORDER BY timestamp DESC LIMIT 5")
-            rows = cur.fetchall()
-        conn.close()
-        for r in rows:
-            ts_display = r['timestamp'].astimezone(timezone_jp).strftime('%m/%d %H:%M')
-            ts_value = r['timestamp'].astimezone(timezone_jp).strftime('%Y-%m-%d %H:%M:%S')
-            delete_choices.append({"name": f"{ts_display} (価格:{int(r['price'])})", "value": ts_value})
-    except: pass
-
-    # 選択肢がない場合のダミー
-    if not delete_choices:
-        delete_choices = [{"name": "データなし", "value": "none"}]
-
+    time.sleep(3)
     commands = [
-        {"name": "prediction", "description": "株価を予測し保存 (開発者専用)", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
-        {"name": "show_data", "description": "最新5件のデータを確認 (開発者専用)"},
-        {
-            "name": "delete_dup", 
-            "description": "データを個別に削除 (開発者専用)",
-            "options": [{
-                "name": "target",
-                "description": "削除するデータを選択",
-                "type": 3,
-                "required": True,
-                "choices": delete_choices
-            }]
-        },
-        {"name": "anime", "description": "今期のアニメ情報", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
-        {"name": "service", "description": "アニメを検索", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
+        {"name": "prediction", "description": "カカポの株価を予測します (開発者専用)", "options": [{"name": "price", "description": "価格", "type": 4, "required": True}]},
+        {"name": "show_data", "description": "最新5件のデータを表示します (開発者専用)"},
+        {"name": "delete_latest", "description": "最新のデータを1件削除します (開発者専用)"},
+        {"name": "anime", "description": "今期の人気アニメ情報を表示します", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
+        {"name": "service", "description": "アニメを検索します", "options": [{"name": "work_name", "description": "作品名", "type": 3, "required": True}]}
     ]
     for cmd in commands: requests.post(base_url, json=cmd, headers=headers)
 
 if __name__ == '__main__':
     init_db()
-    # 初回起動時と、予測・削除のたびに register_commands が呼ばれるように設計
     threading.Thread(target=register_commands).start()
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
