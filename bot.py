@@ -3,7 +3,7 @@ import requests
 import urllib.parse
 import threading
 import time
-import psycopg2 # PostgreSQL用
+import psycopg2 
 from psycopg2.extras import DictCursor
 import numpy as np
 import pandas as pd
@@ -106,7 +106,7 @@ def analyze_logic():
     return status, int(round(diff)), int(round(rsi)), score
 
 # ==========================================
-# 2. Discord機能
+# 2. Discord機能 (非同期処理)
 # ==========================================
 def handle_prediction_async(token, application_id, manual_price):
     save_price(float(manual_price))
@@ -149,6 +149,40 @@ def handle_show_data_async(token, application_id):
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"content": content, "embeds": embeds})
 
+def handle_delete_menu_async(token, application_id):
+    conn = get_db_connection()
+    with conn.cursor(cursor_factory=DictCursor) as cur:
+        cur.execute("SELECT timestamp, price FROM history ORDER BY timestamp DESC LIMIT 5")
+        rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
+        requests.patch(url, json={"content": "⚠️ 削除できるデータがありません。"})
+        return
+
+    options = []
+    for r in rows:
+        ts_str = r['timestamp'].astimezone(timezone_jp).strftime('%Y-%m-%d %H:%M:%S')
+        options.append({
+            "label": f"{r['timestamp'].astimezone(timezone_jp).strftime('%m/%d %H:%M')} - 価格:{int(r['price'])}",
+            "value": ts_str,
+            "description": f"このデータを削除します"
+        })
+
+    components = [{
+        "type": 1,
+        "components": [{
+            "type": 3,
+            "custom_id": "delete_select",
+            "options": options,
+            "placeholder": "削除するデータを選択してください"
+        }]
+    }]
+
+    url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
+    requests.patch(url, json={"content": "🗑️ 消したいデータを選択してください（直近5件）", "components": components})
+
 def get_anime_data(search_query=None, season_key=None, count=10):
     url = "https://api.annict.com/v1/works"
     params = {'access_token': ANNICT_TOKEN, 'sort_watchers_count': 'desc', 'per_page': count}
@@ -173,27 +207,50 @@ def interactions():
     if data.get('type') == InteractionType.PING:
         return jsonify({'type': InteractionResponseType.PONG})
 
+    # --- 管理者判定ロジック ---
+    member = data.get('member', {})
+    user = member.get('user', {}) or data.get('user', {})
+    sender_id = user.get('id')
+    permissions = int(member.get('permissions', 0))
+    is_admin = (permissions & 8) == 8 or sender_id == YOUR_USER_ID
+
+    # --- メニュー選択時の処理 ---
+    if data.get('type') == 3: # MESSAGE_COMPONENT
+        if data['data']['custom_id'] == "delete_select":
+            if not is_admin:
+                return jsonify({'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, 'data': {'content': "⚠️ 権限がありません", 'flags': 64}})
+            
+            selected_ts = data['data']['values'][0]
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM history WHERE timestamp = %s", (selected_ts,))
+            conn.commit()
+            conn.close()
+            return jsonify({
+                'type': InteractionResponseType.UPDATE_MESSAGE,
+                'data': {'content': f"✅ データを削除しました: `{selected_ts}`", "components": []}
+            })
+
+    # --- スラッシュコマンド処理 ---
     if data.get('type') == InteractionType.APPLICATION_COMMAND:
         cmd_name = data['data']['name']
 
-        # 179行目からを以下に差し替え
-        permissions = int(data.get('member', {}).get('permissions', 0))
-        sender_id = data.get('member', {}).get('user', {}).get('id') or data.get('user', {}).get('id')
-        is_admin = (permissions & 8) == 8 or sender_id == YOUR_USER_ID
-        
-        # 権限が必要なコマンド
-        if cmd_name in ['prediction', 'show_data']:
+        # 権限が必要なコマンドのチェック
+        if cmd_name in ['prediction', 'show_data', 'delete_dup']:
             if not is_admin:
                 return jsonify({
                     'type': InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                    'data': {'content': "⚠️ このコマンドは管理者専用です", 'flags': 64} # 64は「自分にだけ見える」設定
+                    'data': {'content': "⚠️ このコマンドは管理者専用です", 'flags': 64}
                 })
             
-            options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
             if cmd_name == 'prediction':
+                options = {opt['name']: opt['value'] for opt in data['data'].get('options', [])}
                 threading.Thread(target=handle_prediction_async, args=(data.get('token'), APPLICATION_ID, options.get('price'))).start()
-            else:
+            elif cmd_name == 'show_data':
                 threading.Thread(target=handle_show_data_async, args=(data.get('token'), APPLICATION_ID)).start()
+            elif cmd_name == 'delete_dup':
+                threading.Thread(target=handle_delete_menu_async, args=(data.get('token'), APPLICATION_ID)).start()
+                
             return jsonify({'type': InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE})
 
         # 公開コマンド
@@ -218,19 +275,10 @@ def register_commands():
     headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
     time.sleep(5)
     
-    # 1. まず古い /yoso コマンドを探して消す
-    try:
-        existing_cmds = requests.get(base_url, headers=headers).json()
-        for c in existing_cmds:
-            if c['name'] == 'yoso':
-                requests.delete(f"{base_url}/{c['id']}", headers=headers)
-                print("Old /yoso command deleted.")
-    except: pass
-
-    # 2. 最新のコマンドリストを登録 (誰でもメニューには出る設定)
     commands = [
-        {"name": "prediction", "description": "カカポの株価を予測します", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
+        {"name": "prediction", "description": "株価を予測し保存", "options": [{"name": "price", "description": "現在の株価", "type": 4, "required": True}]},
         {"name": "show_data", "description": "最新5件のデータを確認"},
+        {"name": "delete_dup", "description": "蓄積データを個別に削除"},
         {"name": "anime", "description": "今期のアニメ情報", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
         {"name": "service", "description": "アニメを検索", "options": [{"name": "work_name", "description": "タイトル", "type": 3, "required": True}]}
     ]
