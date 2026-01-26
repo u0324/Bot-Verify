@@ -139,7 +139,7 @@ def handle_prediction_async(token, application_id, manual_price):
             {"name": "📊 テクニカルスコア", "value": f"{score:+.1f}", "inline": True},
             {"name": "📚 蓄積データ数", "value": f"{count} 件", "inline": True}
         ],
-        "footer": {"text": "カカポ大好きやで"}
+        "footer": {"text": "AI学習式株価予測"}
     }
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"embeds": [embed]})
