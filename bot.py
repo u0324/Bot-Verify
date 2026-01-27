@@ -190,7 +190,7 @@ def handle_show_data_async(token, application_id):
                 elif prediction != "蓄積中": hit_mark = " ❌"
 
             ts = current_row['timestamp'].astimezone(timezone_jp).strftime('%m/%d %H:%M')
-            lines.append(f"📅 {ts} | 価格: **{int(current_row['price'])}**{hit_mark}{status_text}")
+            lines.append(f"📁 {ts} | 価格: **{int(current_row['price'])}**{hit_mark}{status_text}")
         
         data_list = "\n".join(lines)
         embeds = [{"title": "データ履歴 (最新10件)", "description": data_list, "color": 0x2ecc71, "footer": {"text": "✅=的中 / ❌=外れ / 無印=学習前"}}]
@@ -259,11 +259,11 @@ def register_commands():
     headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
     requests.put(base_url, json=[], headers=headers); time.sleep(2)
     commands = [
-        {"name": "prediction", "description": "株価を予測・保存", "options": [{"name": "price", "description": "価格", "type": 4, "required": True}]},
-        {"name": "show_data", "description": "履歴10件と的中判定を表示"},
-        {"name": "delete_latest", "description": "最新1件を削除"},
-        {"name": "anime", "description": "アニメ情報", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
-        {"name": "service", "description": "アニメ検索", "options": [{"name": "work_name", "description": "作品名", "type": 3, "required": True}]}
+        {"name": "prediction", "description": "カカポの株価を予測します", "options": [{"name": "price", "description": "価格", "type": 4, "required": True}]},
+        {"name": "show_data", "description": "10件の保存データと的中判定を表示します"},
+        {"name": "delete_latest", "description": "最新1件の保存データを削除します"},
+        {"name": "anime", "description": "今年の人気アニメ情報を表示します", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
+        {"name": "service", "description": "アニメを検索します", "options": [{"name": "work_name", "description": "作品名", "type": 3, "required": True}]}
     ]
     requests.put(base_url, json=commands, headers=headers)
 
