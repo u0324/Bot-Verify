@@ -177,12 +177,6 @@ def handle_show_data_async(token, application_id):
         requests.patch(url, json={"content": content, "embeds": embeds})
         # --- ここまで ---
 
-        content += "\n" + "\n".join(lines)
-        embeds = []
-
-    url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
-    requests.patch(url, json={"content": content, "embeds": embeds})
-
 # --- アニメ検索機能 ---
 def get_anime_data(search_query=None, season_key=None, count=10):
     url = "https://api.annict.com/v1/works"
