@@ -193,7 +193,7 @@ def handle_show_data_async(token, application_id):
             lines.append(f"📁 {ts} | 価格: **{int(current_row['price'])}**{hit_mark}{status_text}")
         
         data_list = "\n".join(lines)
-        embeds = [{"title": "データ履歴 (最新10件)", "description": data_list, "color": 0x2ecc71, "footer": {"text": "✅=的中 / ❌=外れ / 結果待ち"}}]
+        embeds = [{"title": "データ履歴 (最新10件)", "description": data_list, "color": 0x2ecc71, "footer": {"text": "✅=同じ値 / ❌=変化 / 結果待ち"}}]
 
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"content": content, "embeds": embeds})
