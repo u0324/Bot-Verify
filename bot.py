@@ -33,24 +33,7 @@ timezone_jp = pytz.timezone('Asia/Tokyo')
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
-def init_db():
-    conn = get_db_connection()
-    with conn.cursor() as cur:
-        # 基本テーブル
-        cur.execute('''CREATE TABLE IF NOT EXISTS history 
-                       (timestamp TIMESTAMPTZ, price FLOAT, month INT, day INT, hour INT, prediction_price FLOAT)''')
-        # ログにある「column prediction_price does not exist」を解消
-        cur.execute("""
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                               WHERE table_name='history' AND column_name='prediction_price') THEN
-                    ALTER TABLE history ADD COLUMN prediction_price FLOAT;
-                END IF;
-            END $$;
-        """)
-    conn.commit()
-    conn.close()
+
 
 def save_price(price, pred_price=None):
     now = datetime.now(timezone_jp)
