@@ -145,11 +145,11 @@ def handle_prediction_async(token, application_id, manual_price):
 
 def handle_show_data_async(token, application_id):
     df = load_history()
-    if df.empty:
-        content = "📚 データがまだありません。"
-        embeds = []
-    else:
-                    content = "📚 **最新10件の履歴と的中判定**"
+            if df.empty:
+            content = "📚 データがまだありません。"
+            embeds = []
+        else:
+            content = "📚 **最新10件の履歴と的中判定**"
             lines = []
             display_df = df.iloc[::-1].head(10)
 
@@ -164,7 +164,6 @@ def handle_show_data_async(token, application_id):
                     if i + 1 < len(display_df):
                         prev_data = display_df.iloc[i+1]
                         p_price = getattr(prev_data, 'prediction_price', None)
-                        # 空っぽ(NaN)チェックと的中判定
                         if p_price is not None and not pd.isna(p_price):
                             try:
                                 if abs(round(float(row.price)) - round(float(p_price))) <= 1:
@@ -175,9 +174,13 @@ def handle_show_data_async(token, application_id):
                                 hit_mark = ""
 
                 lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
-    
-    url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
-    requests.patch(url, json={"content": content, "embeds": embeds})
+
+            content += "\n" + "\n".join(lines)
+            embeds = []
+
+        # ここでDiscordに送信（インデントを左に1つ戻した位置です）
+        url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
+        requests.patch(url, json={"content": content, "embeds": embeds})
 
 # --- アニメ検索機能 (維持) ---
 def get_anime_data(search_query=None, season_key=None, count=10):
