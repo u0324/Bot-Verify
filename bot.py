@@ -243,7 +243,7 @@ def register_commands():
         {"name": "prediction", "description": "カカポの株価を予測します", "options": [{"name": "price", "description": "現在の価格", "type": 4, "required": True}]},
         {"name": "show_data", "description": "履歴と的中判定を表示します"},
         {"name": "delete_latest", "description": "最新の履歴を削除します"},
-        {"name": "anime", "description": "今期の人気アニメを表示", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
+        {"name": "anime", "description": "今期の人気アニメをランキングで表示します", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
         {"name": "service", "description": "アニメを検索します", "options": [{"name": "work_name", "description": "作品名", "type": 3, "required": True}]}
     ]
     requests.put(base_url, json=commands, headers=headers)
