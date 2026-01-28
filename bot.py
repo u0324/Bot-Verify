@@ -152,7 +152,8 @@ def handle_show_data_async(token, application_id):
         content = "📚 **最新10件の履歴と的中判定**"
         lines = []
         display_df = df.iloc[::-1].head(10) # 最新順
-                                for i, row in enumerate(display_df.itertuples()):
+
+        for i, row in enumerate(display_df.itertuples()):
             ts = row.timestamp.astimezone(timezone_jp).strftime('%m/%d %H:%M')
             hit_mark = ""
             status_text = ""
@@ -162,11 +163,11 @@ def handle_show_data_async(token, application_id):
             else:
                 if i + 1 < len(display_df):
                     prev_data = display_df.iloc[i+1]
-                    # 予測値が存在し、かつ空っぽ(NaN)でない場合のみ判定
                     p_price = getattr(prev_data, 'prediction_price', None)
+                    # 数字が空っぽ(NaN)でないかチェック
                     if p_price is not None and not pd.isna(p_price):
-                        # 四捨五入して比較(1以内のズレなら正解)
                         try:
+                            # 予測と実際を四捨五入して比較
                             if abs(round(float(row.price)) - round(float(p_price))) <= 1:
                                 hit_mark = " ✅"
                             else:
@@ -176,6 +177,7 @@ def handle_show_data_async(token, application_id):
 
             lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
 
+    
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"content": content, "embeds": embeds})
 
