@@ -33,6 +33,13 @@ timezone_jp = pytz.timezone('Asia/Tokyo')
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
+def init_db():
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        # 既存のテーブルに、足りない「予測値保存用の列」を強制的に追加する
+        cur.execute("ALTER TABLE history ADD COLUMN IF NOT EXISTS prediction_price FLOAT")
+    conn.commit()
+    conn.close()
 
 
 def save_price(price, pred_price=None):
