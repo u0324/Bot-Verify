@@ -165,14 +165,14 @@ def handle_show_data_async(token, application_id):
                 # display_dfは逆順なので、i+1番目が「前回の予測時」のデータ
                 if i + 1 < len(display_df):
                     prev_data = display_df.iloc[i+1]
-                    if hasattr(prev_data, 'prediction_price') and prev_data.prediction_price:
-
-                                        # 判定ロジック：小数点誤差を消すために round() を使用
-                diff_val = abs(round(row.price) - round(prev_data.prediction_price))
-                if diff_val <= 1:
-                    hit_mark = " ✅"
-                else:
-                    hit_mark = " ❌"
+                    
+                if hasattr(prev_data, 'prediction_price') and prev_data.prediction_price:
+                    # 判定ロジック：小数点を四捨五入して比較
+                    diff_val = abs(round(row.price) - round(prev_data.prediction_price))
+                    if diff_val <= 1:
+                        hit_mark = " ✅"
+                    else:
+                        hit_mark = " ❌"
 
 
             lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
