@@ -131,6 +131,51 @@ def handle_prediction_async(token, application_id, manual_price):
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"embeds": [embed]})
 
+def handle_show_data_async(token, application_id):
+    df = load_history()
+    if df.empty:
+        content = "📚 データがまだありません。"
+        embeds = []
+    else:
+        content = "" 
+        lines = []
+        display_df = df.iloc[::-1].head(10)
+
+        # 1. まずデータをすべて lines に集める (forループ)
+        for i, row in enumerate(display_df.itertuples()):
+            ts = row.timestamp.astimezone(timezone_jp).strftime('%m/%d %H:%M')
+            hit_mark = ""
+            status_text = ""
+
+            if i == 0:
+                status_text = " (結果待ち)"
+            else:
+                if i + 1 < len(display_df):
+                    prev_data = display_df.iloc[i+1]
+                    p_price = getattr(prev_data, 'prediction_price', None)
+                    if p_price is not None and not pd.isna(p_price):
+                        try:
+                            if abs(round(float(row.price)) - round(float(p_price))) <= 1:
+                                hit_mark = " ✅"
+                            else:
+                                hit_mark = " ❌"
+                        except:
+                            hit_mark = ""
+
+            lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
+
+        # 2. すべて集め終わったら、1回だけ埋め込み(Embed)を作る
+        # (ここを for と同じ列まで左にずらします)
+        embeds = [{
+            "title": "📚 最新10件の履歴と的中判定",
+            "description": "\n".join(lines),
+            "color": 0x2ecc71,
+            "footer": {"text": "✅=的中 / ❌=外れ"}
+        }]
+
+    # 3. 最後に送信 (else と同じ列まで左にずらします)
+    url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
+    requests.patch(url, json={"content": content, "embeds": embeds})
 
 
 # --- アニメ検索機能 ---
