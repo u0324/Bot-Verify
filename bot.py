@@ -28,7 +28,7 @@ SEASON_MAP = {'spring': 'spring', 'summer': 'summer', 'fall': 'autumn', 'winter'
 timezone_jp = pytz.timezone('Asia/Tokyo')
 
 # ==========================================
-# 0. データベース操作 (列の自動追加機能付き)
+# 0. データベース操作
 # ==========================================
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -36,19 +36,17 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     with conn.cursor() as cur:
-        # 基本テーブル
         cur.execute('''CREATE TABLE IF NOT EXISTS history 
-                       (timestamp TIMESTAMPTZ, price FLOAT, month INT, day INT, hour INT, prediction_price FLOAT)''')
-        # 既存環境に prediction_price 列がない場合、自動で追加する
-        cur.execute("""
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                               WHERE table_name='history' AND column_name='prediction_price') THEN
-                    ALTER TABLE history ADD COLUMN prediction_price FLOAT;
-                END IF;
-            END $$;
-        """)
+                       (timestamp TIMESTAMPTZ, price FLOAT, month INT, day INT, hour INT)''')
+    conn.commit()
+    conn.close()
+
+def save_price(price):
+    now = datetime.now(timezone_jp)
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO history (timestamp, price, month, day, hour) VALUES (%s, %s, %s, %s, %s)",
+                    (now, price, now.month, now.day, now.hour))
     conn.commit()
     conn.close()
 
@@ -59,8 +57,37 @@ def load_history():
     return df
 
 # ==========================================
-# 1. AIロジック (全計算アルゴリズムを維持)
+# 1. AIロジック
 # ==========================================
+def analyze_logic(target_df=None):
+    df = target_df if target_df is not None else load_history()
+    if len(df) < 7: return "蓄積中"
+
+    df = df.copy()
+    df['diff_1'] = df['price'].diff(1)
+    ma5 = df['price'].rolling(window=5).mean()
+    df['deviation'] = (df['price'] - ma5) / ma5 * 100
+    df['momentum'] = df['price'] - df['price'].shift(3)
+
+    train_df = df.dropna()
+    if len(train_df) < 2: return "蓄積中"
+
+    features = ['month', 'day', 'hour', 'deviation', 'momentum']
+    X = train_df[features].values
+    y = train_df['price'].values
+
+    model = RandomForestRegressor(n_estimators=100, max_depth=7, random_state=42)
+    model.fit(X, y)
+    
+    last_row = df.iloc[-1]
+    current_features = np.array([[last_row['month'], last_row['day'], last_row['hour'], last_row['deviation'], last_row['momentum']]])
+    predicted_price = model.predict(current_features)[0]
+    
+    diff = int(round(predicted_price - last_row['price']))
+    if diff >= 1: return "UP"
+    elif diff <= -1: return "DOWN"
+    else: return "STAY"
+
 def get_full_analysis():
     df = load_history()
     if len(df) < 7: return f"蓄積中({len(df)}/7)", 0, 50, 0.0
@@ -75,25 +102,22 @@ def get_full_analysis():
     X = train_df[features].values
     y = train_df['price'].values
 
-    # RandomForest
     model = RandomForestRegressor(n_estimators=100, max_depth=7, random_state=42)
     model.fit(X, y)
     
     now = datetime.now(timezone_jp)
     last_row = df.iloc[-1]
     current_features = np.array([[now.month, now.day, now.hour, last_row['deviation'], last_row['momentum']]])
-    predicted_price_raw = model.predict(current_features)[0]
+    predicted_price = model.predict(current_features)[0]
     
-    # RSI計算
     delta = df['price'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=min(len(df), 14)).mean().iloc[-1]
     loss = (-delta.where(delta < 0, 0)).rolling(window=min(len(df), 14)).mean().iloc[-1]
     rsi = 100.0 - (100.0 / (1.0 + (gain / loss))) if loss != 0 else 50.0
 
     current_price = df['price'].iloc[-1]
-    diff = int(round(predicted_price_raw - current_price))
+    diff = int(round(predicted_price - current_price))
 
-    # テクニカルスコア計算 (維持)
     score = 0.0
     if diff >= 5: score += 2.0
     elif diff >= 1: score += 1.0
@@ -101,7 +125,6 @@ def get_full_analysis():
     if rsi > 70: score -= 1.5
     if last_row['deviation'] < -2: score += 1.0
 
-    # 判定メッセージ分岐 (維持)
     if diff >= 10 or score >= 3: status = "強力な上昇サイン 🚀"
     elif 1 <= diff <= 3 or score >= 1: status = "緩やかな上昇見込み 📈"
     elif diff <= -10 or score <= -3: status = "暴落注意 📉"
@@ -111,22 +134,13 @@ def get_full_analysis():
     return status, diff, int(round(rsi)), score
 
 # ==========================================
-# 2. Discord機能 (的中判定を修正)
+# 2. Discord機能
 # ==========================================
 def handle_prediction_async(token, application_id, manual_price):
-    # 1. まず分析を行う
+    save_price(float(manual_price))
     status, diff, rsi, score = get_full_analysis()
-    predicted_next = float(manual_price + diff)
-    
-    # 2. 現在の価格と「次回の予測値」をセットで保存
-    now = datetime.now(timezone_jp)
-    conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute("INSERT INTO history (timestamp, price, month, day, hour, prediction_price) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (now, float(manual_price), now.month, now.day, now.hour, predicted_next))
-    conn.commit()
-    count = pd.read_sql_query("SELECT COUNT(*) FROM history", conn).iloc[0,0]
-    conn.close()
+    df_current = load_history()
+    count = len(df_current)
 
     embed = {
         "title": "🕊️ カカポ株価　AI診断",
@@ -134,7 +148,7 @@ def handle_prediction_async(token, application_id, manual_price):
         "color": 0x5865F2,
         "fields": [
             {"name": "🤖 総合判定", "value": f"**{status}**", "inline": False},
-            {"name": "🎯 次回予測価格", "value": f"{int(predicted_next)}", "inline": True},
+            {"name": "🎯 次回予測価格", "value": f"{int(manual_price + diff)}", "inline": True},
             {"name": "🌡️ RSI (熱感)", "value": f"{rsi}%", "inline": True},
             {"name": "📈 変動幅予想", "value": f"{diff:+d}", "inline": True},
             {"name": "📊 テクニカルスコア", "value": f"{score:+.1f}", "inline": True},
@@ -155,48 +169,45 @@ def handle_show_data_async(token, application_id):
         lines = []
         display_df = df.iloc[::-1].head(10)
         
-        for i, row in enumerate(display_df.itertuples()):
-            ts = row.timestamp.astimezone(timezone_jp).strftime('%m/%d %H:%M')
-            idx = row.Index
-            hit_mark, pred_info = "", ""
+        for i in range(len(display_df)):
+            current_row = display_df.iloc[i]
+            idx_in_full = df.index[df['timestamp'] == current_row['timestamp']][0]
             
-            # 最新の行は「結果待ち」
+            hit_mark = ""
+            status_text = ""
+            # 一番上（最新）は判定せず「結果待ち」にする
             if i == 0:
-                status_text = " (次回の結果待ち)"
-            else:
-                status_text = ""
-                # 的中判定：前回の予測値 (prediction_price) と今回の実測値 (price) を比較
-                # インデックスが 0 より大きい場合、一つ前の予測値を取得
-                if idx > 0:
-                    prev_prediction = df.iloc[idx-1]['prediction_price']
-                    if prev_prediction is not None:
-                        pred_info = f" (予:{int(prev_prediction)})"
-                        # 予測との差が1以内なら的中
-                        hit_mark = " ✅" if abs(row.price - prev_prediction) <= 1 else " ❌"
+                if len(df) >= 7: status_text = " (次回の結果待ち)"
+            elif idx_in_full > 0:
+                prev_df = df.iloc[:idx_in_full]
+                prediction = analyze_logic(prev_df)
+                prev_price = df.iloc[idx_in_full - 1]['price']
+                actual_price = current_row['price']
+                
+                if prediction == "UP" and actual_price > prev_price: hit_mark = " ✅"
+                elif prediction == "DOWN" and actual_price < prev_price: hit_mark = " ✅"
+                elif prediction == "STAY" and actual_price == prev_price: hit_mark = " ✅"
+                elif prediction != "蓄積中": hit_mark = " ❌"
 
-            lines.append(f"📁 {ts} | **{int(row.price)}**{pred_info}{hit_mark}{status_text}")
+            ts = current_row['timestamp'].astimezone(timezone_jp).strftime('%m/%d %H:%M')
+            lines.append(f"📁 {ts} | 価格: **{int(current_row['price'])}**{hit_mark}{status_text}")
         
-        embeds = [{"title": "10件のデータ履歴と的中判定", "description": "\n".join(lines), "color": 0x2ecc71, "footer": {"text": "✅=予言的中 / ❌=外れ / (予:)=前回のAI予測値"}}]
+        data_list = "\n".join(lines)
+        embeds = [{"title": "データ履歴 (最新10件)", "description": data_list, "color": 0x2ecc71, "footer": {"text": "✅=的中 / ❌=外れ / 無印=学習前"}}]
 
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"content": content, "embeds": embeds})
 
-# ==========================================
-# 3. アニメ・検索機能 (維持)
-# ==========================================
 def get_anime_data(search_query=None, season_key=None, count=10):
     url = "https://api.annict.com/v1/works"
     params = {'access_token': ANNICT_TOKEN, 'sort_watchers_count': 'desc', 'per_page': count}
     if search_query: params['filter_title'] = search_query
-    elif season_key: params['filter_season'] = f"2026-{SEASON_MAP.get(season_key, 'spring')}"
+    elif season_key: params['filter_season'] = f"{datetime.now().year}-{SEASON_MAP.get(season_key, 'spring')}"
     try:
         res = requests.get(url, params=params, timeout=10).json()
         return res.get('works', [])
     except: return []
 
-# ==========================================
-# 4. Flask & Interactions (全コマンド維持)
-# ==========================================
 @app.route('/', methods=['POST'])
 def interactions():
     signature = request.headers.get('X-Signature-Ed25519')
@@ -246,11 +257,12 @@ def interactions():
 def register_commands():
     base_url = f"https://discord.com/api/v10/applications/{APPLICATION_ID}/commands"
     headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
+    requests.put(base_url, json=[], headers=headers); time.sleep(2)
     commands = [
         {"name": "prediction", "description": "カカポの株価を予測します", "options": [{"name": "price", "description": "価格", "type": 4, "required": True}]},
-        {"name": "show_data", "description": "10件の最新履歴と的中判定を表示します"},
-        {"name": "delete_latest", "description": "最新データを削除します"},
-        {"name": "anime", "description": "今年のアニメ情報を表示します", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
+        {"name": "show_data", "description": "10件の保存データと的中判定を表示します"},
+        {"name": "delete_latest", "description": "最新1件の保存データを削除します"},
+        {"name": "anime", "description": "今年の人気アニメ情報を表示します", "options": [{"name": "season", "description": "季節", "type": 3, "choices": [{"name":"春","value":"spring"},{"name":"夏","value":"summer"},{"name":"秋","value":"fall"},{"name":"冬","value":"winter"}]}]},
         {"name": "service", "description": "アニメを検索します", "options": [{"name": "work_name", "description": "作品名", "type": 3, "required": True}]}
     ]
     requests.put(base_url, json=commands, headers=headers)
@@ -259,3 +271,4 @@ if __name__ == '__main__':
     init_db()
     threading.Thread(target=register_commands).start()
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
+  
