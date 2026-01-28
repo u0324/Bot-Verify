@@ -163,6 +163,19 @@ def handle_show_data_async(token, application_id):
                             hit_mark = ""
 
             lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
+            # --- ここから追加 ---
+            content = "" 
+            embeds = [{
+                "title": "📚 最新10件の履歴と的中判定",
+                "description": "\n".join(lines),
+                "color": 0x2ecc71,
+                "footer": {"text": "✅=的中 / ❌=外れ"}
+            }]
+
+        # Discordに送信（インデントを1つ左に戻した位置に置いてください）
+        url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
+        requests.patch(url, json={"content": content, "embeds": embeds})
+        # --- ここまで ---
 
         content += "\n" + "\n".join(lines)
         embeds = []
