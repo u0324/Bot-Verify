@@ -131,51 +131,7 @@ def handle_prediction_async(token, application_id, manual_price):
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"embeds": [embed]})
 
-def handle_show_data_async(token, application_id):
-    df = load_history()
-    # ここから修正箇所：インデントを正しく揃えました
-    if df.empty:
-        content = "📚 データがまだありません。"
-        embeds = []
-    else:
-        content = "📚 **最新10件の履歴と的中判定**"
-        lines = []
-        display_df = df.iloc[::-1].head(10)
 
-        for i, row in enumerate(display_df.itertuples()):
-            ts = row.timestamp.astimezone(timezone_jp).strftime('%m/%d %H:%M')
-            hit_mark = ""
-            status_text = ""
-
-            if i == 0:
-                status_text = " (結果待ち)"
-            else:
-                if i + 1 < len(display_df):
-                    prev_data = display_df.iloc[i+1]
-                    p_price = getattr(prev_data, 'prediction_price', None)
-                    if p_price is not None and not pd.isna(p_price):
-                        try:
-                            if abs(round(float(row.price)) - round(float(p_price))) <= 1:
-                                hit_mark = " ✅"
-                            else:
-                                hit_mark = " ❌"
-                        except:
-                            hit_mark = ""
-
-            lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
-            # --- ここから追加 ---
-            content = "" 
-            embeds = [{
-                "title": "📚 最新10件の履歴と的中判定",
-                "description": "\n".join(lines),
-                "color": 0x2ecc71,
-                "footer": {"text": "✅=的中 / ❌=外れ"}
-            }]
-
-        # Discordに送信（インデントを1つ左に戻した位置に置いてください）
-        url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
-        requests.patch(url, json={"content": content, "embeds": embeds})
-        # --- ここまで ---
 
 # --- アニメ検索機能 ---
 def get_anime_data(search_query=None, season_key=None, count=10):
