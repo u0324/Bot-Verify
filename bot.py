@@ -152,29 +152,30 @@ def handle_show_data_async(token, application_id):
         content = "📚 **最新10件の履歴と的中判定**"
         lines = []
         display_df = df.iloc[::-1].head(10) # 最新順
-        
-        for i, row in enumerate(display_df.itertuples()):
+                for i, row in enumerate(display_df.itertuples()):
             ts = row.timestamp.astimezone(timezone_jp).strftime('%m/%d %H:%M')
             hit_mark = ""
             status_text = ""
-            
+
             if i == 0:
                 status_text = " (結果待ち)"
             else:
                 # ひとつ過去のデータに保存されていた「予言」を取得
-                # display_dfは逆順なので、i+1番目が「前回の予測時」のデータ
                 if i + 1 < len(display_df):
                     prev_data = display_df.iloc[i+1]
-                    
-                if hasattr(prev_data, 'prediction_price') and prev_data.prediction_price:
-                    # 判定ロジック：小数点を四捨五入して比較
-                    diff_val = abs(round(row.price) - round(prev_data.prediction_price))
-                    if diff_val <= 1:
-                        hit_mark = " ✅"
-                    else:
-                        hit_mark = " ❌"
+                    if hasattr(prev_data, 'prediction_price') and prev_data.prediction_price:
+                        # 判定ロジック：四捨五入して比較
+                        p_val = round(float(prev_data.prediction_price))
+                        r_val = round(float(row.price))
+                        if abs(r_val - p_val) <= 1:
+                            hit_mark = " ✅"
+                        else:
+                            hit_mark = " ❌"
+
+            lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
 
 
+        
             lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
         
         embeds = [{"title": "データ履歴", "description": "\n".join(lines), "color": 0x2ecc71, "footer": {"text": "✅=的中 / ❌=外れ"}}]
