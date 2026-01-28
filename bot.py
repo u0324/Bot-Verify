@@ -149,34 +149,32 @@ def handle_show_data_async(token, application_id):
         content = "📚 データがまだありません。"
         embeds = []
     else:
-        content = "📚 **最新10件の履歴と的中判定**"
-        lines = []
-        display_df = df.iloc[::-1].head(10) # 最新順
+                    content = "📚 **最新10件の履歴と的中判定**"
+            lines = []
+            display_df = df.iloc[::-1].head(10)
 
-        for i, row in enumerate(display_df.itertuples()):
-            ts = row.timestamp.astimezone(timezone_jp).strftime('%m/%d %H:%M')
-            hit_mark = ""
-            status_text = ""
+            for i, row in enumerate(display_df.itertuples()):
+                ts = row.timestamp.astimezone(timezone_jp).strftime('%m/%d %H:%M')
+                hit_mark = ""
+                status_text = ""
 
-            if i == 0:
-                status_text = " (結果待ち)"
-            else:
-                if i + 1 < len(display_df):
-                    prev_data = display_df.iloc[i+1]
-                    p_price = getattr(prev_data, 'prediction_price', None)
-                    # 数字が空っぽ(NaN)でないかチェック
-                    if p_price is not None and not pd.isna(p_price):
-                        try:
-                            # 予測と実際を四捨五入して比較
-                            if abs(round(float(row.price)) - round(float(p_price))) <= 1:
-                                hit_mark = " ✅"
-                            else:
-                                hit_mark = " ❌"
-                        except:
-                            hit_mark = ""
+                if i == 0:
+                    status_text = " (結果待ち)"
+                else:
+                    if i + 1 < len(display_df):
+                        prev_data = display_df.iloc[i+1]
+                        p_price = getattr(prev_data, 'prediction_price', None)
+                        # 空っぽ(NaN)チェックと的中判定
+                        if p_price is not None and not pd.isna(p_price):
+                            try:
+                                if abs(round(float(row.price)) - round(float(p_price))) <= 1:
+                                    hit_mark = " ✅"
+                                else:
+                                    hit_mark = " ❌"
+                            except:
+                                hit_mark = ""
 
-            lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
-
+                lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
     
     url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
     requests.patch(url, json={"content": content, "embeds": embeds})
