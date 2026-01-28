@@ -166,12 +166,14 @@ def handle_show_data_async(token, application_id):
                 if i + 1 < len(display_df):
                     prev_data = display_df.iloc[i+1]
                     if hasattr(prev_data, 'prediction_price') and prev_data.prediction_price:
-                        # 実際の価格(row.price) と 予言(prev_data.prediction_price) を
-                # 四捨五入(round)してから比較することで、微小な誤差を無視する
-                if abs(round(row.price) - round(prev_data.prediction_price)) <= 1:
+
+                                        # 判定ロジック：小数点誤差を消すために round() を使用
+                diff_val = abs(round(row.price) - round(prev_data.prediction_price))
+                if diff_val <= 1:
                     hit_mark = " ✅"
                 else:
                     hit_mark = " ❌"
+
 
             lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{status_text}")
         
