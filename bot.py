@@ -156,7 +156,7 @@ def handle_show_data_async(token, application_id):
                     if p_price is not None and not pd.isna(p_price):
                         try:
                             # 実際の結果(row.price) と 過去の予測(p_price) を比較
-                            if abs(round(float(row.price)) - round(float(p_price))) <= 1:
+                            if int(round(float(row.price))) - int(round(float(p_price))) == 0:
                                 hit_mark = " ✅"
                             else:
                                 hit_mark = " ❌"
