@@ -145,8 +145,8 @@ async def prediction(interaction: discord.Interaction, price: int):
     embed.set_footer(text="AI学習式株価予測")
     await interaction.followup.send(embed=embed)
 
-# --- 開発者専用: チャンネル再生成 (Nuke) ---
-@bot.tree.command(name="nuke", description="チャンネルをリセットします（自動判別モード）")
+# --- 開発者専用: チャンネルリセット (自動判別版) ---
+@bot.tree.command(name="nuke", description="チャンネルをリセットします")
 @app_commands.describe(channel_id="リセットしたいチャンネルのIDを入力してください")
 async def nuke(interaction: discord.Interaction, channel_id: str):
     if interaction.user.id != YOUR_USER_ID:
@@ -160,18 +160,22 @@ async def nuke(interaction: discord.Interaction, channel_id: str):
 
         # 1. まず再生成（削除して作り直し）を試みる
         try:
+            # 設定をコピーして新しいチャンネルを作成
             new_channel = await target_channel.clone(reason="Nukeによる再生成")
+            # 元のチャンネルを削除
             await target_channel.delete(reason="Nukeによる削除")
+            # 並び順を同じ位置に調整
             await new_channel.edit(position=target_channel.position)
-            await interaction.followup.send(f"✅ <#{new_channel.id}> を再生成しました。")
-            await new_channel.send("💥 チャンネルが再生成されました。")
             
-        # 2. 削除権限エラー（コミュニティ用チャンネルなど）が出た場合
-        except discord.Forbidden or discord.HTTPException:
-            # メッセージ掃除モードに切り替え
+            await interaction.followup.send(f"✅ <#{new_channel.id}> を再生成しました。")
+            await new_channel.send("💥 チャンネルがリセット（再生成）されました。")
+            
+        # 2. 削除権限エラー（コミュニティ用チャンネルなど）が出た場合の予備動作
+        except (discord.Forbidden, discord.HTTPException) as e:
+            # チャンネルが消せない場合は、メッセージだけを全削除
             deleted = await target_channel.purge(limit=1000)
-            await interaction.followup.send(f"⚠️ このチャンネルは削除不可のため、メッセージ {len(deleted)} 件を掃除しました。")
-            await target_channel.send("💥 削除不可のチャンネルのため、メッセージのみをリセットしました。")
+            await interaction.followup.send(f"⚠️ このチャンネルはシステム保護されているため、メッセージ {len(deleted)} 件を掃除しました。")
+            await target_channel.send("💥 システム保護されたチャンネルのため、メッセージのみを掃除しました。")
 
     except Exception as e:
         await interaction.followup.send(f"❌ 予期せぬエラー: {e}")
