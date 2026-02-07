@@ -25,6 +25,8 @@ start_time = datetime.now(timezone_jp)
 
 # --- Discord Bot Client ---
 intents = discord.Intents.default()
+# 監視機能不要のため message_content intent は基本不要ですが、
+# 万が一Prefixコマンド (!sync等) を使う場合のために残しておきます。
 intents.message_content = True 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -37,10 +39,9 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     with conn.cursor() as cur:
+        # 株価履歴テーブルのみを管理
         cur.execute('''CREATE TABLE IF NOT EXISTS history 
                        (timestamp TIMESTAMPTZ, price FLOAT, month INT, day INT, hour INT, prediction_price FLOAT)''')
-        cur.execute('''CREATE TABLE IF NOT EXISTS settings 
-                       (user_id TEXT PRIMARY KEY, is_notice_on BOOLEAN DEFAULT FALSE)''')
     conn.commit()
     conn.close()
 
@@ -60,7 +61,7 @@ def load_history():
     return df
 
 # ==========================================
-# 1. AIロジック
+# 1. AIロジック (ランダムフォレスト)
 # ==========================================
 def get_full_analysis():
     df = load_history()
@@ -103,30 +104,16 @@ def get_full_analysis():
         return "AI調整中", 0, 50, 0.0
 
 # ==========================================
-# 2. イベント・監視機能
+# 2. イベント
 # ==========================================
 @bot.event
 async def on_ready():
     init_db()
-    await bot.tree.sync() # これで説明文と選択肢を強制同期
-    await bot.change_presence(status=discord.Status.invisible) # 隠れ身モード
+    # 起動時にコマンドの説明文と選択肢をDiscordに強制同期
+    await bot.tree.sync() 
+    # ステータスを「オフライン（不可視）」に設定
+    await bot.change_presence(status=discord.Status.invisible)
     print(f"✅ Online as {bot.user}")
-
-@bot.event
-async def on_message(message):
-    if message.author.bot: return
-    # ギフト通知
-    if "https://gift.takasumibot.com/" in message.content:
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT is_notice_on FROM settings WHERE user_id = %s", (str(YOUR_USER_ID),))
-            res = cur.fetchone()
-            is_on = res[0] if res else False
-        conn.close()
-        if is_on:
-            owner = await bot.fetch_user(YOUR_USER_ID)
-            await owner.send(f"🎁 **ギフトリンク検知**\n{message.content}")
-    await bot.process_commands(message)
 
 # ==========================================
 # 3. スラッシュコマンド
@@ -152,7 +139,7 @@ async def prediction(interaction: discord.Interaction, price: int):
     embed.set_footer(text="AI学習式株価予測")
     await interaction.followup.send(embed=embed)
 
-# --- 開発者専用: 一括削除 (追加) ---
+# --- 開発者専用: 一括削除 ---
 @bot.tree.command(name="nuke", description="指定したチャンネルのメッセージを一括削除します")
 @app_commands.describe(channel_id="削除したいチャンネルのIDを入力してください")
 async def nuke(interaction: discord.Interaction, channel_id: str):
@@ -168,17 +155,6 @@ async def nuke(interaction: discord.Interaction, channel_id: str):
             await interaction.followup.send("⚠️ 有効なチャンネルIDが見つかりません。")
     except Exception as e:
         await interaction.followup.send(f"❌ エラー: {e}")
-
-# --- 開発者専用: 通知スイッチ ---
-@bot.tree.command(name="notice", description="ギフト通知のON/OFFを切り替えます")
-async def notice(interaction: discord.Interaction):
-    if interaction.user.id != YOUR_USER_ID: return
-    conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute("INSERT INTO settings (user_id, is_notice_on) VALUES (%s, TRUE) ON CONFLICT (user_id) DO UPDATE SET is_notice_on = NOT settings.is_notice_on RETURNING is_notice_on", (str(YOUR_USER_ID),))
-        new_on = cur.fetchone()[0]
-    conn.commit(); conn.close()
-    await interaction.response.send_message(f"{'🔔 ON' if new_on else '🔕 OFF'} にしました")
 
 # --- 履歴表示 ---
 @bot.tree.command(name="show_data", description="データの保存履歴と的中判定を表示します")
@@ -199,7 +175,7 @@ async def show_data(interaction: discord.Interaction):
     embed = discord.Embed(title="📚 最新10件の履歴と的中判定", description="\n".join(lines), color=0x2ecc71)
     await interaction.response.send_message(embed=embed)
 
-# --- システム状況 (強化版) ---
+# --- システム状況 ---
 @bot.tree.command(name="status", description="Botの稼働状況を確認します")
 async def status(interaction: discord.Interaction):
     uptime = datetime.now(timezone_jp) - start_time
@@ -215,18 +191,23 @@ async def status(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 # --- 四則演算 ---
-@bot.tree.command(name="calculation", description="計算を行います")
-@app_commands.choices(op=[app_commands.Choice(name="+", value="+"), app_commands.Choice(name="-", value="-"), app_commands.Choice(name="*", value="*"), app_commands.Choice(name="/", value="/")])
+@bot.tree.command(name="calculation", description="簡単な計算を行います")
+@app_commands.choices(op=[
+    app_commands.Choice(name="+", value="+"), 
+    app_commands.Choice(name="-", value="-"), 
+    app_commands.Choice(name="*", value="*"), 
+    app_commands.Choice(name="/", value="/")
+])
 async def calculation(interaction: discord.Interaction, num1: float, op: str, num2: float):
     try:
         if op == '+': res = num1 + num2
         elif op == '-': res = num1 - num2
         elif op == '*': res = num1 * num2
         elif op == '/': res = num1 / num2 if num2 != 0 else "Error"
-        await interaction.response.send_message(f"🔢 結果: `{num1} {op} {num2} = {res}`")
-    except: await interaction.response.send_message("エラー")
+        await interaction.response.send_message(f"🧮 結果: `{num1} {op} {num2} = {res}`")
+    except: await interaction.response.send_message("エラーが発生しました")
 
-# --- アニメ表示 (選択肢復活) ---
+# --- アニメ表示 (選択肢付き) ---
 @bot.tree.command(name="anime", description="今期の人気アニメを表示します")
 @app_commands.choices(season=[
     app_commands.Choice(name="🌸 春", value="spring"),
@@ -237,20 +218,21 @@ async def calculation(interaction: discord.Interaction, num1: float, op: str, nu
 async def anime(interaction: discord.Interaction, season: app_commands.Choice[str]):
     await interaction.response.defer()
     url = "https://api.annict.com/v1/works"
+    # season.value を使って検索
     params = {'access_token': ANNICT_TOKEN, 'filter_season': f"{datetime.now().year}-{season.value}", 'sort_watchers_count': 'desc', 'per_page': 10}
     res = requests.get(url, params=params).json()
     works = res.get('works', [])
-    if not works: return await interaction.followup.send("⚠️ データなし")
+    if not works: return await interaction.followup.send("⚠️ データが見つかりませんでした")
     embeds = [discord.Embed(title=f"{i+1}. {w['title']}", url=w.get('official_site_url'), color=0x3498db) for i, w in enumerate(works)]
     await interaction.followup.send(embeds=embeds)
 
 # --- 作品検索 ---
-@bot.tree.command(name="service", description="アニメを検索します")
+@bot.tree.command(name="service", description="アニメ作品を検索します")
 async def service(interaction: discord.Interaction, work_name: str):
     url = "https://api.annict.com/v1/works"
     res = requests.get(url, params={'access_token': ANNICT_TOKEN, 'filter_title': work_name, 'per_page': 3}).json()
     works = res.get('works', [])
-    if not works: return await interaction.response.send_message("⚠️ なし")
+    if not works: return await interaction.response.send_message("⚠️ 作品が見つかりませんでした")
     embeds = [discord.Embed(title=w['title'], description=f"[Google検索](https://www.google.com/search?q={urllib.parse.quote(w['title'])}+アニメ)", color=0xe74c3c) for w in works]
     await interaction.response.send_message(embeds=embeds)
 
@@ -261,6 +243,6 @@ async def delete_latest(interaction: discord.Interaction):
     conn = get_db_connection(); cur = conn.cursor()
     cur.execute("DELETE FROM history WHERE timestamp = (SELECT MAX(timestamp) FROM history)")
     cnt = cur.rowcount; conn.commit(); conn.close()
-    await interaction.response.send_message("✅ 削除成功" if cnt > 0 else "⚠️ データなし")
+    await interaction.response.send_message("✅ 最新のデータを削除しました" if cnt > 0 else "⚠️ 削除するデータがありません")
 
 bot.run(DISCORD_BOT_TOKEN)
