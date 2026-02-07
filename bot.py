@@ -146,8 +146,8 @@ async def prediction(interaction: discord.Interaction, price: int):
     await interaction.followup.send(embed=embed)
 
 # --- 開発者専用: チャンネル再生成 (Nuke) ---
-@bot.tree.command(name="nuke", description="チャンネルを削除して再生成します（ログを完全消去）")
-@app_commands.describe(channel_id="再生成したいチャンネルのIDを入力してください")
+@bot.tree.command(name="nuke", description="チャンネルをリセットします（自動判別モード）")
+@app_commands.describe(channel_id="リセットしたいチャンネルのIDを入力してください")
 async def nuke(interaction: discord.Interaction, channel_id: str):
     if interaction.user.id != YOUR_USER_ID:
         return await interaction.response.send_message("⚠️ 開発者専用", ephemeral=True)
@@ -155,24 +155,26 @@ async def nuke(interaction: discord.Interaction, channel_id: str):
     await interaction.response.defer(ephemeral=True)
     try:
         target_channel = bot.get_channel(int(channel_id))
-        if target_channel and isinstance(target_channel, discord.TextChannel):
-            # 現在のチャンネル設定（名前、カテゴリー、位置、権限など）をコピーして作成
+        if not target_channel or not isinstance(target_channel, discord.TextChannel):
+            return await interaction.followup.send("⚠️ 有効なチャンネルが見つかりません。")
+
+        # 1. まず再生成（削除して作り直し）を試みる
+        try:
             new_channel = await target_channel.clone(reason="Nukeによる再生成")
-            
-            # 元のチャンネルを削除
             await target_channel.delete(reason="Nukeによる削除")
-            
-            # 新しいチャンネルを元の位置（順番）に移動
             await new_channel.edit(position=target_channel.position)
+            await interaction.followup.send(f"✅ <#{new_channel.id}> を再生成しました。")
+            await new_channel.send("💥 チャンネルが再生成されました。")
             
-            await interaction.followup.send(f"✅ <#{new_channel.id}> を再生成しました。以前のメッセージは完全に消去されました。")
-            
-            # 新しいチャンネル側に完了メッセージを送信
-            await new_channel.send("💥 このチャンネルはリセットされました。")
-        else:
-            await interaction.followup.send("⚠️ 有効なテキストチャンネルIDが見つかりません。")
+        # 2. 削除権限エラー（コミュニティ用チャンネルなど）が出た場合
+        except discord.Forbidden or discord.HTTPException:
+            # メッセージ掃除モードに切り替え
+            deleted = await target_channel.purge(limit=1000)
+            await interaction.followup.send(f"⚠️ このチャンネルは削除不可のため、メッセージ {len(deleted)} 件を掃除しました。")
+            await target_channel.send("💥 削除不可のチャンネルのため、メッセージのみをリセットしました。")
+
     except Exception as e:
-        await interaction.followup.send(f"❌ エラーが発生しました: {e}")
+        await interaction.followup.send(f"❌ 予期せぬエラー: {e}")
 
 # --- 履歴表示 ---
 @bot.tree.command(name="show_data", description="データの保存履歴と的中判定を表示します")
