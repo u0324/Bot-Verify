@@ -111,9 +111,15 @@ async def on_ready():
     init_db()
     # 起動時にコマンドの説明文と選択肢をDiscordに強制同期
     await bot.tree.sync() 
-    # ステータスを「オフライン（不可視）」に設定
-    await bot.change_presence(status=discord.Status.invisible)
+    
+    # --- ステータス設定 ---
+    # 状態を「オンライン」にし、アクティビティを「視聴中」に設定することで
+    # 「Uの生活 をサポート中」に近いニュアンス、または「Uの生活」を強調して表示します
+    activity = discord.Activity(type=discord.ActivityType.watching, name="Uの生活")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
+    
     print(f"✅ Online as {bot.user}")
+
 
 # ==========================================
 # 3. スラッシュコマンド
