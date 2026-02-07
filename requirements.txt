@@ -1,6 +1,5 @@
-flask
-gunicorn
-discord-interactions
+discord.py
+psutil
 requests
 pandas
 numpy
