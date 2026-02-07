@@ -25,8 +25,6 @@ start_time = datetime.now(timezone_jp)
 
 # --- Discord Bot Client ---
 intents = discord.Intents.default()
-# 監視機能不要のため message_content intent は基本不要ですが、
-# 万が一Prefixコマンド (!sync等) を使う場合のために残しておきます。
 intents.message_content = True 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -39,7 +37,6 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     with conn.cursor() as cur:
-        # 株価履歴テーブルのみを管理
         cur.execute('''CREATE TABLE IF NOT EXISTS history 
                        (timestamp TIMESTAMPTZ, price FLOAT, month INT, day INT, hour INT, prediction_price FLOAT)''')
     conn.commit()
@@ -109,12 +106,9 @@ def get_full_analysis():
 @bot.event
 async def on_ready():
     init_db()
-    # 起動時にコマンドの説明文と選択肢をDiscordに強制同期
     await bot.tree.sync() 
     
     # --- ステータス設定 ---
-    # 状態を「オンライン」にし、アクティビティを「視聴中」に設定することで
-    # 「Uの生活 をサポート中」に近いニュアンス、または「Uの生活」を強調して表示します
     activity = discord.Activity(type=discord.ActivityType.watching, name="Uの生活")
     await bot.change_presence(status=discord.Status.online, activity=activity)
     
@@ -145,7 +139,7 @@ async def prediction(interaction: discord.Interaction, price: int):
     embed.set_footer(text="AI学習式株価予測")
     await interaction.followup.send(embed=embed)
 
-# --- 開発者専用: チャンネルリセット (自動判別版) ---
+# --- 開発者専用: チャンネルリセット ---
 @bot.tree.command(name="nuke", description="チャンネルをリセットします")
 @app_commands.describe(channel_id="リセットしたいチャンネルのIDを入力してください")
 async def nuke(interaction: discord.Interaction, channel_id: str):
@@ -242,7 +236,6 @@ async def calculation(interaction: discord.Interaction, num1: float, op: str, nu
 async def anime(interaction: discord.Interaction, season: app_commands.Choice[str]):
     await interaction.response.defer()
     url = "https://api.annict.com/v1/works"
-    # season.value を使って検索
     params = {'access_token': ANNICT_TOKEN, 'filter_season': f"{datetime.now().year}-{season.value}", 'sort_watchers_count': 'desc', 'per_page': 10}
     res = requests.get(url, params=params).json()
     works = res.get('works', [])
