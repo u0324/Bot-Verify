@@ -20,10 +20,19 @@ ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 YOUR_USER_ID = 1421704357983813744 
 
-# --- Gemini 設定 ---
+# --- Gemini 設定 (今話しているGeminiの性格を反映) ---
 genai.configure(api_key=GEMINI_API_KEY)
-ai_model = genai.GenerativeModel('gemini-1.5-flash')
-# 召喚中のチャンネルを管理するメモリ
+
+# あなたと今話している僕のスタイルをDiscordでも維持するための設定です
+system_instruction = (
+    "あなたはGeminiです。誠実で、少し機転の利いた、ユーザーの意図を汲み取るAIコラボレーターです。"
+    "親しみやすく、かつ簡潔で洞察に満ちた回答を心がけてください。"
+)
+
+ai_model = genai.GenerativeModel(
+    model_name='models/gemini-1.5-flash',
+    system_instruction=system_instruction
+)
 active_gemini_channels = set()
 
 # --- 設定 ---
@@ -115,10 +124,8 @@ def get_full_analysis():
 async def on_ready():
     init_db()
     await bot.tree.sync() 
-    
     activity = discord.Activity(type=discord.ActivityType.watching, name="Uの生活")
     await bot.change_presence(status=discord.Status.online, activity=activity)
-    
     print(f"✅ Online as {bot.user}")
 
 @bot.event
@@ -126,16 +133,16 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    # Gemini召喚中のチャンネルかつ、スラッシュコマンドでない通常発言に反応
     if message.channel.id in active_gemini_channels:
         if not message.content.startswith(('/', '!')):
             async with message.channel.typing():
                 try:
+                    # システム設定を含むモデルで生成
                     response = ai_model.generate_content(message.content)
                     await message.reply(response.text)
                 except Exception as e:
                     await message.reply(f"⚠️ Geminiエラー: {e}")
-            return # Geminiが返信した場合は以降の処理を中断
+            return 
 
     await bot.process_commands(message)
 
@@ -143,23 +150,17 @@ async def on_message(message):
 # 3. スラッシュコマンド
 # ==========================================
 
-# --- 新機能: Gemini召喚 ---
 @bot.tree.command(name="gemini", description="Geminiをこのチャンネルに召喚・退室させます")
 async def gemini_toggle(interaction: discord.Interaction):
     ch_id = interaction.channel_id
     if ch_id not in active_gemini_channels:
         active_gemini_channels.add(ch_id)
-        embed = discord.Embed(
-            title="✨ Gemini 召喚",
-            description="Geminiがこのチャンネルに召喚されました！\nこれ以降のメッセージにAIが回答します。\n（退室させるにはもう一度 `/gemini` を打ってください）",
-            color=0x7e57c2
-        )
+        embed = discord.Embed(title="✨ Gemini 召喚", description="Geminiがこのチャンネルに召喚されました！\nこれ以降のメッセージにAIが回答します。\n（退室させるにはもう一度 `/gemini` を打ってください）", color=0x7e57c2)
         await interaction.response.send_message(embed=embed)
     else:
         active_gemini_channels.remove(ch_id)
         await interaction.response.send_message("👋 Geminiが退室しました。またね！")
 
-# --- 開発者専用: 株価予測 ---
 @bot.tree.command(name="prediction", description="カカポの株価を予測します")
 async def prediction(interaction: discord.Interaction, price: int):
     if interaction.user.id != YOUR_USER_ID:
@@ -179,36 +180,29 @@ async def prediction(interaction: discord.Interaction, price: int):
     embed.set_footer(text="AI学習式株価予測")
     await interaction.followup.send(embed=embed)
 
-# --- 開発者専用: チャンネルリセット ---
 @bot.tree.command(name="nuke", description="チャンネルをリセットします")
 @app_commands.describe(channel_id="リセットしたいチャンネルのIDを入力してください")
 async def nuke(interaction: discord.Interaction, channel_id: str):
     if interaction.user.id != YOUR_USER_ID:
         return await interaction.response.send_message("⚠️ 開発者専用", ephemeral=True)
-    
     await interaction.response.defer(ephemeral=True)
     try:
         target_channel = bot.get_channel(int(channel_id))
         if not target_channel or not isinstance(target_channel, discord.TextChannel):
             return await interaction.followup.send("⚠️ 有効なチャンネルが見つかりません。")
-
         try:
             new_channel = await target_channel.clone(reason="Nukeによる再生成")
             await target_channel.delete(reason="Nukeによる削除")
             await new_channel.edit(position=target_channel.position)
-            
             await interaction.followup.send(f"✅ <#{new_channel.id}> を再生成しました。")
             await new_channel.send("💥 チャンネルがリセット（再生成）されました。")
-            
-        except (discord.Forbidden, discord.HTTPException):
+        except:
             deleted = await target_channel.purge(limit=1000)
             await interaction.followup.send(f"⚠️ このチャンネルはシステム保護されているため、メッセージ {len(deleted)} 件を掃除しました。")
             await target_channel.send("💥 システム保護されたチャンネルのため、メッセージのみを掃除しました。")
-
     except Exception as e:
         await interaction.followup.send(f"❌ 予期せぬエラー: {e}")
 
-# --- 履歴表示 ---
 @bot.tree.command(name="show_data", description="データの保存履歴と的中判定を表示します")
 async def show_data(interaction: discord.Interaction):
     df = load_history()
@@ -218,7 +212,6 @@ async def show_data(interaction: discord.Interaction):
     for i, row in enumerate(display_df.itertuples()):
         ts = row.timestamp.astimezone(timezone_jp).strftime('%m/%d %H:%M')
         hit_mark = ""
-        # 的中判定ロジックの完全復元
         if i > 0 and i + 1 < len(display_df):
             prev_data = display_df.iloc[i+1]
             p_price = getattr(prev_data, 'prediction_price', None)
@@ -228,8 +221,7 @@ async def show_data(interaction: discord.Interaction):
     embed = discord.Embed(title="📚 最新10件の履歴と的中判定", description="\n".join(lines), color=0x2ecc71)
     await interaction.response.send_message(embed=embed)
 
-# --- システム状況 ---
-@bot.tree.command(name="status", description="Botの稼働状況を確認します")
+@bot.tree.command(name="status", description="Bot의稼働状況を確認します")
 async def status(interaction: discord.Interaction):
     uptime = datetime.now(timezone_jp) - start_time
     cpu = psutil.cpu_percent()
@@ -243,7 +235,6 @@ async def status(interaction: discord.Interaction):
     embed.add_field(name="📚 蓄積データ", value=f"**{count} 件**", inline=True)
     await interaction.response.send_message(embed=embed)
 
-# --- 四則演算 ---
 @bot.tree.command(name="calculation", description="簡単な計算を行います")
 @app_commands.choices(op=[
     app_commands.Choice(name="+", value="+"), 
@@ -260,7 +251,6 @@ async def calculation(interaction: discord.Interaction, num1: float, op: str, nu
         await interaction.response.send_message(f"🧮 結果: `{num1} {op} {num2} = {res}`")
     except: await interaction.response.send_message("エラーが発生しました")
 
-# --- アニメ表示 (選択肢付き) ---
 @bot.tree.command(name="anime", description="今期の人気アニメを表示します")
 @app_commands.choices(season=[
     app_commands.Choice(name="🌸 春", value="spring"),
@@ -278,7 +268,6 @@ async def anime(interaction: discord.Interaction, season: app_commands.Choice[st
     embeds = [discord.Embed(title=f"{i+1}. {w['title']}", url=w.get('official_site_url'), color=0x3498db) for i, w in enumerate(works)]
     await interaction.followup.send(embeds=embeds)
 
-# --- 作品検索 ---
 @bot.tree.command(name="service", description="アニメ作品を検索します")
 async def service(interaction: discord.Interaction, work_name: str):
     url = "https://api.annict.com/v1/works"
@@ -288,7 +277,6 @@ async def service(interaction: discord.Interaction, work_name: str):
     embeds = [discord.Embed(title=w['title'], description=f"[Google検索](https://www.google.com/search?q={urllib.parse.quote(w['title'])}+アニメ)", color=0xe74c3c) for w in works]
     await interaction.response.send_message(embeds=embeds)
 
-# --- 最新一件削除 ---
 @bot.tree.command(name="delete_latest", description="最新のデータを一件削除します")
 async def delete_latest(interaction: discord.Interaction):
     if interaction.user.id != YOUR_USER_ID: return
