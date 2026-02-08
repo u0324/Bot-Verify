@@ -11,7 +11,7 @@ import numpy as np
 from datetime import datetime
 import pytz
 from sklearn.ensemble import RandomForestRegressor
-import google.generativeai as genai
+from google import genai  # 最新ライブラリを適用
 
 # --- Secrets ---
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -20,22 +20,16 @@ ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 YOUR_USER_ID = 1421704357983813744 
 
-# --- Gemini 設定 (404対策版) ---
-genai.configure(api_key=GEMINI_API_KEY)
-
-# 今話している僕の性格を反映
+# --- Gemini 最新設定 (404対策) ---
+client = genai.Client(api_key=GEMINI_API_KEY)
+AI_MODEL_ID = "gemini-1.5-flash"
+# 僕（Gemini）の性格設定
 instruction = "あなたはGeminiです。誠実で、少し機転の利いた、ユーザーの意図を汲み取るAIコラボレーターです。親しみやすく、かつ簡潔で洞察に満ちた回答を心がけてください。"
 
-# エラーが出にくいよう、最も標準的なモデル名で初期化
-ai_model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash',
-    system_instruction=instruction
-)
 active_gemini_channels = set()
 
-# --- 設定 ---
+# --- 基本設定 ---
 timezone_jp = pytz.timezone('Asia/Tokyo')
-SEASON_MAP = {'spring': 'spring', 'summer': 'summer', 'fall': 'autumn', 'winter': 'winter'}
 start_time = datetime.now(timezone_jp)
 
 # --- Discord Bot Client ---
@@ -44,7 +38,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==========================================
-# 0. データベース操作
+# 0. データベース操作 (完全復元)
 # ==========================================
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -73,7 +67,7 @@ def load_history():
     return df
 
 # ==========================================
-# 1. AIロジック (ランダムフォレスト)
+# 1. AIロジック (ランダムフォレスト - 完全復元)
 # ==========================================
 def get_full_analysis():
     df = load_history()
@@ -134,23 +128,21 @@ async def on_message(message):
         if not message.content.startswith(('/', '!')):
             async with message.channel.typing():
                 try:
-                    # 404対策: ライブラリのバージョンに合わせて呼び出し方を自動調整
-                    response = ai_model.generate_content(message.content)
+                    # 最新ライブラリでの生成
+                    response = client.models.generate_content(
+                        model=AI_MODEL_ID,
+                        contents=message.content,
+                        config={'system_instruction': instruction}
+                    )
                     await message.reply(response.text)
                 except Exception as e:
-                    # それでもダメな場合のフォールバック
-                    try:
-                        fallback_model = genai.GenerativeModel('gemini-1.5-flash')
-                        response = fallback_model.generate_content(message.content)
-                        await message.reply(response.text)
-                    except Exception as e2:
-                        await message.reply(f"⚠️ Gemini接続エラー: {e2}")
+                    await message.reply(f"⚠️ Geminiエラー: {e}")
             return 
 
     await bot.process_commands(message)
 
 # ==========================================
-# 3. スラッシュコマンド (全説明・選択肢を完全維持)
+# 3. スラッシュコマンド (全機能・全説明を完全維持)
 # ==========================================
 
 @bot.tree.command(name="gemini", description="Geminiをこのチャンネルに召喚・退室させます")
