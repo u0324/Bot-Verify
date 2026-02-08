@@ -6,18 +6,18 @@ import psutil
 import requests
 import urllib.parse
 import psycopg2
-import pd
+import pandas as pd
 import numpy as np
 from datetime import datetime
 import pytz
 from sklearn.ensemble import RandomForestRegressor
-import google.generativeai as genai  # 追加
+import google.generativeai as genai  
 
 # --- Secrets ---
 DATABASE_URL = os.getenv('DATABASE_URL')
 DISCORD_BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') # 新しく環境変数に追加してください
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') 
 YOUR_USER_ID = 1421704357983813744 
 
 # --- Gemini 初期設定 ---
@@ -141,7 +141,7 @@ async def on_message(message):
 # 3. スラッシュコマンド
 # ==========================================
 
-# --- 追加: Gemini召喚/退室 ---
+# --- Gemini召喚/退室 ---
 @bot.tree.command(name="gemini", description="Geminiを召喚または退室させます")
 async def gemini(interaction: discord.Interaction):
     ch_id = interaction.channel_id
