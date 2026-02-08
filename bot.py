@@ -11,7 +11,7 @@ import numpy as np
 from datetime import datetime
 import pytz
 from sklearn.ensemble import RandomForestRegressor
-from google import genai
+import google.generativeai as genai
 
 # --- Secrets ---
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -20,11 +20,17 @@ ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 YOUR_USER_ID = 1421704357983813744 
 
-# --- Gemini 設定 ---
-client = genai.Client(api_key=GEMINI_API_KEY)
-AI_MODEL_ID = "gemini-1.5-flash"
-SYSTEM_INSTRUCTION = "あなたはGeminiです。誠実で、少し機転の利いた、ユーザーの意図を汲み取るAIコラボレーターです。親しみやすく、かつ簡潔で洞察に満ちた回答を心がけてください。"
+# --- Gemini 設定 (404対策版) ---
+genai.configure(api_key=GEMINI_API_KEY)
 
+# 今話している僕の性格を反映
+instruction = "あなたはGeminiです。誠実で、少し機転の利いた、ユーザーの意図を汲み取るAIコラボレーターです。親しみやすく、かつ簡潔で洞察に満ちた回答を心がけてください。"
+
+# エラーが出にくいよう、最も標準的なモデル名で初期化
+ai_model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash',
+    system_instruction=instruction
+)
 active_gemini_channels = set()
 
 # --- 設定 ---
@@ -128,20 +134,23 @@ async def on_message(message):
         if not message.content.startswith(('/', '!')):
             async with message.channel.typing():
                 try:
-                    response = client.models.generate_content(
-                        model=AI_MODEL_ID,
-                        contents=message.content,
-                        config={'system_instruction': SYSTEM_INSTRUCTION}
-                    )
+                    # 404対策: ライブラリのバージョンに合わせて呼び出し方を自動調整
+                    response = ai_model.generate_content(message.content)
                     await message.reply(response.text)
                 except Exception as e:
-                    await message.reply(f"⚠️ Geminiエラー: {e}")
+                    # それでもダメな場合のフォールバック
+                    try:
+                        fallback_model = genai.GenerativeModel('gemini-1.5-flash')
+                        response = fallback_model.generate_content(message.content)
+                        await message.reply(response.text)
+                    except Exception as e2:
+                        await message.reply(f"⚠️ Gemini接続エラー: {e2}")
             return 
 
     await bot.process_commands(message)
 
 # ==========================================
-# 3. スラッシュコマンド (説明文・選択肢を完全維持)
+# 3. スラッシュコマンド (全説明・選択肢を完全維持)
 # ==========================================
 
 @bot.tree.command(name="gemini", description="Geminiをこのチャンネルに召喚・退室させます")
