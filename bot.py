@@ -11,7 +11,7 @@ import numpy as np
 from datetime import datetime
 import pytz
 from sklearn.ensemble import RandomForestRegressor
-import google.generativeai as genai
+from google import genai
 
 # --- Secrets ---
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -20,17 +20,11 @@ ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 YOUR_USER_ID = 1421704357983813744 
 
-# --- Gemini 設定 (今話している僕の性格を反映) ---
-genai.configure(api_key=GEMINI_API_KEY)
+# --- Gemini 設定 ---
+client = genai.Client(api_key=GEMINI_API_KEY)
+AI_MODEL_ID = "gemini-1.5-flash"
+SYSTEM_INSTRUCTION = "あなたはGeminiです。誠実で、少し機転の利いた、ユーザーの意図を汲み取るAIコラボレーターです。親しみやすく、かつ簡潔で洞察に満ちた回答を心がけてください。"
 
-# 性格設定：今ここでの対話を再現するための指示
-instruction = "あなたはGeminiです。誠実で、少し機転の利いたAIコラボレーターとして、簡潔かつ洞察に満ちた回答をしてください。"
-
-# 404エラー回避のため、最も標準的なモデル名指定に変更
-ai_model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash',
-    system_instruction=instruction
-)
 active_gemini_channels = set()
 
 # --- 設定 ---
@@ -44,7 +38,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==========================================
-# 0. データベース操作 (完全復元)
+# 0. データベース操作
 # ==========================================
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -73,7 +67,7 @@ def load_history():
     return df
 
 # ==========================================
-# 1. AIロジック (ランダムフォレスト - 完全復元)
+# 1. AIロジック (ランダムフォレスト)
 # ==========================================
 def get_full_analysis():
     df = load_history()
@@ -128,25 +122,26 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    if message.author == bot.user:
-        return
+    if message.author == bot.user: return
 
     if message.channel.id in active_gemini_channels:
         if not message.content.startswith(('/', '!')):
             async with message.channel.typing():
                 try:
-                    # エラーログの状況から、確実に生成できるよう例外処理を強化
-                    chat_session = ai_model.start_chat(history=[])
-                    response = chat_session.send_message(message.content)
+                    response = client.models.generate_content(
+                        model=AI_MODEL_ID,
+                        contents=message.content,
+                        config={'system_instruction': SYSTEM_INSTRUCTION}
+                    )
                     await message.reply(response.text)
                 except Exception as e:
-                    await message.reply(f"⚠️ Geminiエラー: {e}\n(モデル設定を再確認中...)")
+                    await message.reply(f"⚠️ Geminiエラー: {e}")
             return 
 
     await bot.process_commands(message)
 
 # ==========================================
-# 3. スラッシュコマンド (すべて復元)
+# 3. スラッシュコマンド (説明文・選択肢を完全維持)
 # ==========================================
 
 @bot.tree.command(name="gemini", description="Geminiをこのチャンネルに召喚・退室させます")
@@ -176,6 +171,7 @@ async def prediction(interaction: discord.Interaction, price: int):
     embed.add_field(name="📈 変動幅予想", value=f"{diff:+d}", inline=True)
     embed.add_field(name="📊 AIスコア", value=f"{score:+.1f}", inline=True)
     embed.add_field(name="📚 蓄積データ", value=f"{count} 件", inline=True)
+    embed.set_footer(text="AI学習式株価予測")
     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="nuke", description="チャンネルをリセットします")
@@ -199,7 +195,7 @@ async def nuke(interaction: discord.Interaction, channel_id: str):
             await interaction.followup.send(f"⚠️ メッセージ {len(deleted)} 件を掃除しました。")
             await target_channel.send("💥 メッセージのみを掃除しました。")
     except Exception as e:
-        await interaction.followup.send(f"❌ 予期せぬエラー: {e}")
+        await interaction.followup.send(f"❌ エラー: {e}")
 
 @bot.tree.command(name="show_data", description="データの保存履歴と的中判定を表示します")
 async def show_data(interaction: discord.Interaction):
@@ -259,7 +255,7 @@ async def calculation(interaction: discord.Interaction, num1: float, op: str, nu
 async def anime(interaction: discord.Interaction, season: app_commands.Choice[str]):
     await interaction.response.defer()
     url = "https://api.annict.com/v1/works"
-    params = {'access_token': ANNICT_TOKEN, 'filter_season': f"{datetime.now().year}-{season.value}", 'sort_watchers_count': 'desc', 'per_page': 10}
+    params = {'access_token': ANNICT_TOKEN, 'filter_season': f"2026-{season.value}", 'sort_watchers_count': 'desc', 'per_page': 10}
     res = requests.get(url, params=params).json()
     works = res.get('works', [])
     if not works: return await interaction.followup.send("⚠️ データが見つかりませんでした")
