@@ -6,4 +6,4 @@ pandas
 numpy
 pytz
 scikit-learn
-google-genai
+google-generativeai>=0.8.0
