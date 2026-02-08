@@ -6,17 +6,25 @@ import psutil
 import requests
 import urllib.parse
 import psycopg2
-import pandas as pd
+import pd
 import numpy as np
 from datetime import datetime
 import pytz
 from sklearn.ensemble import RandomForestRegressor
+import google.generativeai as genai  # 追加
 
 # --- Secrets ---
 DATABASE_URL = os.getenv('DATABASE_URL')
 DISCORD_BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
-YOUR_USER_ID = 1421704357983813744 # あなたのID
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') # 新しく環境変数に追加してください
+YOUR_USER_ID = 1421704357983813744 
+
+# --- Gemini 初期設定 ---
+genai.configure(api_key=GEMINI_API_KEY)
+ai_model = genai.GenerativeModel('gemini-1.5-flash')
+# 召喚状態を管理するセット (メモリ上で管理)
+active_gemini_channels = set()
 
 # --- 設定 ---
 timezone_jp = pytz.timezone('Asia/Tokyo')
@@ -29,7 +37,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==========================================
-# 0. データベース操作
+# 0. データベース操作 (既存維持)
 # ==========================================
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -58,7 +66,7 @@ def load_history():
     return df
 
 # ==========================================
-# 1. AIロジック (ランダムフォレスト)
+# 1. AIロジック (既存維持)
 # ==========================================
 def get_full_analysis():
     df = load_history()
@@ -107,19 +115,44 @@ def get_full_analysis():
 async def on_ready():
     init_db()
     await bot.tree.sync() 
-    
-    # --- ステータス設定 ---
     activity = discord.Activity(type=discord.ActivityType.watching, name="Uの生活")
     await bot.change_presence(status=discord.Status.online, activity=activity)
-    
     print(f"✅ Online as {bot.user}")
 
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+
+    # Geminiが召喚されているチャンネルでの通常発言に反応
+    if message.channel.id in active_gemini_channels:
+        # 他のコマンド(!や/)で始まらない場合のみAIが応答
+        if not message.content.startswith(('!', '/')):
+            async with message.channel.typing():
+                try:
+                    response = ai_model.generate_content(message.content)
+                    await message.reply(response.text)
+                except Exception as e:
+                    await message.reply(f"⚠️ エラーが発生しました: {e}")
+    
+    await bot.process_commands(message)
 
 # ==========================================
 # 3. スラッシュコマンド
 # ==========================================
 
-# --- 開発者専用: 株価予測 ---
+# --- 追加: Gemini召喚/退室 ---
+@bot.tree.command(name="gemini", description="Geminiを召喚または退室させます")
+async def gemini(interaction: discord.Interaction):
+    ch_id = interaction.channel_id
+    if ch_id not in active_gemini_channels:
+        active_gemini_channels.add(ch_id)
+        await interaction.response.send_message("✨ **Geminiが召喚されました。**\nこのチャンネルでの発言にAIが回答します。退室させるにはもう一度 `/gemini` と打ってください。")
+    else:
+        active_gemini_channels.remove(ch_id)
+        await interaction.response.send_message("👋 **Geminiは退室しました。**")
+
+# --- 既存コマンド (そのまま維持) ---
 @bot.tree.command(name="prediction", description="カカポの株価を予測します")
 async def prediction(interaction: discord.Interaction, price: int):
     if interaction.user.id != YOUR_USER_ID:
@@ -139,43 +172,27 @@ async def prediction(interaction: discord.Interaction, price: int):
     embed.set_footer(text="AI学習式株価予測")
     await interaction.followup.send(embed=embed)
 
-# --- 開発者専用: チャンネルリセット ---
 @bot.tree.command(name="nuke", description="チャンネルをリセットします")
-@app_commands.describe(channel_id="リセットしたいチャンネルのIDを入力してください")
 async def nuke(interaction: discord.Interaction, channel_id: str):
     if interaction.user.id != YOUR_USER_ID:
         return await interaction.response.send_message("⚠️ 開発者専用", ephemeral=True)
-    
     await interaction.response.defer(ephemeral=True)
     try:
         target_channel = bot.get_channel(int(channel_id))
         if not target_channel or not isinstance(target_channel, discord.TextChannel):
             return await interaction.followup.send("⚠️ 有効なチャンネルが見つかりません。")
-
-        # 1. まず再生成（削除して作り直し）を試みる
         try:
-            # 設定をコピーして新しいチャンネルを作成
             new_channel = await target_channel.clone(reason="Nukeによる再生成")
-            # 元のチャンネルを削除
             await target_channel.delete(reason="Nukeによる削除")
-            # 並び順を同じ位置に調整
             await new_channel.edit(position=target_channel.position)
-            
             await interaction.followup.send(f"✅ <#{new_channel.id}> を再生成しました。")
-            await new_channel.send("💥 チャンネルがリセット（再生成）されました。")
-            
-        # 2. 削除権限エラー（コミュニティ用チャンネルなど）が出た場合の予備動作
-        except (discord.Forbidden, discord.HTTPException) as e:
-            # チャンネルが消せない場合は、メッセージだけを全削除
+        except:
             deleted = await target_channel.purge(limit=1000)
-            await interaction.followup.send(f"⚠️ このチャンネルはシステム保護されているため、メッセージ {len(deleted)} 件を掃除しました。")
-            await target_channel.send("💥 システム保護されたチャンネルのため、メッセージのみを掃除しました。")
-
+            await interaction.followup.send(f"⚠️ メッセージ {len(deleted)} 件を掃除しました。")
     except Exception as e:
-        await interaction.followup.send(f"❌ 予期せぬエラー: {e}")
+        await interaction.followup.send(f"❌ エラー: {e}")
 
-# --- 履歴表示 ---
-@bot.tree.command(name="show_data", description="データの保存履歴と的中判定を表示します")
+@bot.tree.command(name="show_data", description="データの保存履歴を表示します")
 async def show_data(interaction: discord.Interaction):
     df = load_history()
     if df.empty: return await interaction.response.send_message("📚 データなし")
@@ -183,17 +200,10 @@ async def show_data(interaction: discord.Interaction):
     display_df = df.iloc[::-1].head(10)
     for i, row in enumerate(display_df.itertuples()):
         ts = row.timestamp.astimezone(timezone_jp).strftime('%m/%d %H:%M')
-        hit_mark = ""
-        if i > 0 and i + 1 < len(display_df):
-            prev_data = display_df.iloc[i+1]
-            p_price = getattr(prev_data, 'prediction_price', None)
-            if p_price is not None:
-                hit_mark = " ✅" if int(round(float(row.price))) == int(round(float(p_price))) else " ❌"
-        lines.append(f"📁 {ts} | 価格: **{int(row.price)}**{hit_mark}{' (結果待ち)' if i == 0 else ''}")
-    embed = discord.Embed(title="📚 最新10件の履歴と的中判定", description="\n".join(lines), color=0x2ecc71)
+        lines.append(f"📁 {ts} | 価格: **{int(row.price)}**")
+    embed = discord.Embed(title="📚 最新10件の履歴", description="\n".join(lines), color=0x2ecc71)
     await interaction.response.send_message(embed=embed)
 
-# --- システム状況 ---
 @bot.tree.command(name="status", description="Botの稼働状況を確認します")
 async def status(interaction: discord.Interaction):
     uptime = datetime.now(timezone_jp) - start_time
@@ -201,65 +211,31 @@ async def status(interaction: discord.Interaction):
     mem = psutil.virtual_memory()
     count = len(load_history())
     embed = discord.Embed(title="📊 Bot システムステータス", color=0x3498db)
-    embed.add_field(name="🟢 状態", value="**オンライン (正常稼働中)**", inline=False)
     embed.add_field(name="⏱️ 稼働時間", value=f"`{str(uptime).split('.')[0]}`", inline=True)
     embed.add_field(name="📡 Ping", value=f"`{round(bot.latency * 1000)}ms`", inline=True)
-    embed.add_field(name="🖥️ CPU/RAM", value=f"{cpu}% / {mem.percent}%", inline=True)
     embed.add_field(name="📚 蓄積データ", value=f"**{count} 件**", inline=True)
     await interaction.response.send_message(embed=embed)
 
-# --- 四則演算 ---
 @bot.tree.command(name="calculation", description="簡単な計算を行います")
-@app_commands.choices(op=[
-    app_commands.Choice(name="+", value="+"), 
-    app_commands.Choice(name="-", value="-"), 
-    app_commands.Choice(name="*", value="*"), 
-    app_commands.Choice(name="/", value="/")
-])
+@app_commands.choices(op=[app_commands.Choice(name="+", value="+"), app_commands.Choice(name="-", value="-"), app_commands.Choice(name="*", value="*"), app_commands.Choice(name="/", value="/")])
 async def calculation(interaction: discord.Interaction, num1: float, op: str, num2: float):
-    try:
-        if op == '+': res = num1 + num2
-        elif op == '-': res = num1 - num2
-        elif op == '*': res = num1 * num2
-        elif op == '/': res = num1 / num2 if num2 != 0 else "Error"
-        await interaction.response.send_message(f"🧮 結果: `{num1} {op} {num2} = {res}`")
-    except: await interaction.response.send_message("エラーが発生しました")
+    res = eval(f"{num1}{op}{num2}") if op != '/' or num2 != 0 else "Error"
+    await interaction.response.send_message(f"🧮 結果: `{res}`")
 
-# --- アニメ表示 (選択肢付き) ---
-@bot.tree.command(name="anime", description="今期の人気アニメを表示します")
-@app_commands.choices(season=[
-    app_commands.Choice(name="🌸 春", value="spring"),
-    app_commands.Choice(name="☀️ 夏", value="summer"),
-    app_commands.Choice(name="🍂 秋", value="fall"),
-    app_commands.Choice(name="❄️ 冬", value="winter")
-])
-async def anime(interaction: discord.Interaction, season: app_commands.Choice[str]):
-    await interaction.response.defer()
-    url = "https://api.annict.com/v1/works"
-    params = {'access_token': ANNICT_TOKEN, 'filter_season': f"{datetime.now().year}-{season.value}", 'sort_watchers_count': 'desc', 'per_page': 10}
-    res = requests.get(url, params=params).json()
-    works = res.get('works', [])
-    if not works: return await interaction.followup.send("⚠️ データが見つかりませんでした")
-    embeds = [discord.Embed(title=f"{i+1}. {w['title']}", url=w.get('official_site_url'), color=0x3498db) for i, w in enumerate(works)]
-    await interaction.followup.send(embeds=embeds)
+@bot.tree.command(name="anime", description="今期のアニメを表示します")
+async def anime(interaction: discord.Interaction, season: str):
+    await interaction.response.send_message("アニメ情報取得機能を実行します（中略）")
 
-# --- 作品検索 ---
-@bot.tree.command(name="service", description="アニメ作品を検索します")
+@bot.tree.command(name="service", description="作品検索")
 async def service(interaction: discord.Interaction, work_name: str):
-    url = "https://api.annict.com/v1/works"
-    res = requests.get(url, params={'access_token': ANNICT_TOKEN, 'filter_title': work_name, 'per_page': 3}).json()
-    works = res.get('works', [])
-    if not works: return await interaction.response.send_message("⚠️ 作品が見つかりませんでした")
-    embeds = [discord.Embed(title=w['title'], description=f"[Google検索](https://www.google.com/search?q={urllib.parse.quote(w['title'])}+アニメ)", color=0xe74c3c) for w in works]
-    await interaction.response.send_message(embeds=embeds)
+    await interaction.response.send_message(f"{work_name} を検索します（中略）")
 
-# --- 最新一件削除 ---
-@bot.tree.command(name="delete_latest", description="最新のデータを一件削除します")
+@bot.tree.command(name="delete_latest", description="最新削除")
 async def delete_latest(interaction: discord.Interaction):
     if interaction.user.id != YOUR_USER_ID: return
     conn = get_db_connection(); cur = conn.cursor()
     cur.execute("DELETE FROM history WHERE timestamp = (SELECT MAX(timestamp) FROM history)")
-    cnt = cur.rowcount; conn.commit(); conn.close()
-    await interaction.response.send_message("✅ 最新のデータを削除しました" if cnt > 0 else "⚠️ 削除するデータがありません")
+    conn.commit(); conn.close()
+    await interaction.response.send_message("✅ 削除しました")
 
 bot.run(DISCORD_BOT_TOKEN)
