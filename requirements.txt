@@ -1,9 +1,9 @@
 discord.py
 psutil
 requests
+psycopg2-binary
 pandas
 numpy
-scikit-learn
 pytz
-psycopg2-binary
-google-generativeai
+scikit-learn
+google-genai
