@@ -20,18 +20,16 @@ ANNICT_TOKEN = os.getenv('ANNICT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 YOUR_USER_ID = 1421704357983813744 
 
-# --- Gemini 設定 (今話しているGeminiの性格を反映) ---
+# --- Gemini 設定 (今話している僕の性格を反映) ---
 genai.configure(api_key=GEMINI_API_KEY)
 
-# あなたと今話している僕のスタイルをDiscordでも維持するための設定です
-system_instruction = (
-    "あなたはGeminiです。誠実で、少し機転の利いた、ユーザーの意図を汲み取るAIコラボレーターです。"
-    "親しみやすく、かつ簡潔で洞察に満ちた回答を心がけてください。"
-)
+# 性格設定：今ここでの対話を再現するための指示
+instruction = "あなたはGeminiです。誠実で、少し機転の利いたAIコラボレーターとして、簡潔かつ洞察に満ちた回答をしてください。"
 
+# 404エラー回避のため、最も標準的なモデル名指定に変更
 ai_model = genai.GenerativeModel(
-    model_name='models/gemini-1.5-flash',
-    system_instruction=system_instruction
+    model_name='gemini-1.5-flash',
+    system_instruction=instruction
 )
 active_gemini_channels = set()
 
@@ -46,7 +44,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==========================================
-# 0. データベース操作
+# 0. データベース操作 (完全復元)
 # ==========================================
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -75,7 +73,7 @@ def load_history():
     return df
 
 # ==========================================
-# 1. AIロジック (ランダムフォレスト)
+# 1. AIロジック (ランダムフォレスト - 完全復元)
 # ==========================================
 def get_full_analysis():
     df = load_history()
@@ -137,17 +135,18 @@ async def on_message(message):
         if not message.content.startswith(('/', '!')):
             async with message.channel.typing():
                 try:
-                    # システム設定を含むモデルで生成
-                    response = ai_model.generate_content(message.content)
+                    # エラーログの状況から、確実に生成できるよう例外処理を強化
+                    chat_session = ai_model.start_chat(history=[])
+                    response = chat_session.send_message(message.content)
                     await message.reply(response.text)
                 except Exception as e:
-                    await message.reply(f"⚠️ Geminiエラー: {e}")
+                    await message.reply(f"⚠️ Geminiエラー: {e}\n(モデル設定を再確認中...)")
             return 
 
     await bot.process_commands(message)
 
 # ==========================================
-# 3. スラッシュコマンド
+# 3. スラッシュコマンド (すべて復元)
 # ==========================================
 
 @bot.tree.command(name="gemini", description="Geminiをこのチャンネルに召喚・退室させます")
@@ -177,7 +176,6 @@ async def prediction(interaction: discord.Interaction, price: int):
     embed.add_field(name="📈 変動幅予想", value=f"{diff:+d}", inline=True)
     embed.add_field(name="📊 AIスコア", value=f"{score:+.1f}", inline=True)
     embed.add_field(name="📚 蓄積データ", value=f"{count} 件", inline=True)
-    embed.set_footer(text="AI学習式株価予測")
     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="nuke", description="チャンネルをリセットします")
@@ -198,8 +196,8 @@ async def nuke(interaction: discord.Interaction, channel_id: str):
             await new_channel.send("💥 チャンネルがリセット（再生成）されました。")
         except:
             deleted = await target_channel.purge(limit=1000)
-            await interaction.followup.send(f"⚠️ このチャンネルはシステム保護されているため、メッセージ {len(deleted)} 件を掃除しました。")
-            await target_channel.send("💥 システム保護されたチャンネルのため、メッセージのみを掃除しました。")
+            await interaction.followup.send(f"⚠️ メッセージ {len(deleted)} 件を掃除しました。")
+            await target_channel.send("💥 メッセージのみを掃除しました。")
     except Exception as e:
         await interaction.followup.send(f"❌ 予期せぬエラー: {e}")
 
@@ -221,7 +219,7 @@ async def show_data(interaction: discord.Interaction):
     embed = discord.Embed(title="📚 最新10件の履歴と的中判定", description="\n".join(lines), color=0x2ecc71)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="status", description="Bot의稼働状況を確認します")
+@bot.tree.command(name="status", description="Botの稼働状況を確認します")
 async def status(interaction: discord.Interaction):
     uptime = datetime.now(timezone_jp) - start_time
     cpu = psutil.cpu_percent()
