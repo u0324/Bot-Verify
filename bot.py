@@ -232,4 +232,55 @@ async def delete_latest(interaction: discord.Interaction):
     cnt = cur.rowcount; conn.commit(); conn.close()
     await interaction.response.send_message("✅ 最新のデータを削除しました" if cnt > 0 else "⚠️ 削除するデータがありません")
 
+# --- 音楽再生用の設定 ---
+YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True}
+FFMPEG_OPTIONS = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn'
+}
+
+@bot.tree.command(name="music", description="音楽を再生します（曲名またはURL）")
+@app_commands.describe(query="検索ワードまたはYouTubeリンク")
+async def music(interaction: discord.Interaction, query: str):
+    if not interaction.user.voice:
+        return await interaction.response.send_message("❌ ボイスチャンネルに入ってください。", ephemeral=True)
+
+    await interaction.response.defer()
+
+    try:
+        # 接続確認
+        channel = interaction.user.voice.channel
+        vc = interaction.guild.voice_client
+        if vc is None:
+            vc = await channel.connect()
+        elif vc.channel != channel:
+            await vc.move_to(channel)
+
+        # 検索と抽出
+        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+            info = ydl.extract_info(f"ytsearch:{query}", download=False)['entries'][0]
+            url = info['url']
+            title = info['title']
+            webpage_url = info['webpage_url']
+
+        if vc.is_playing():
+            vc.stop()
+
+        # 再生
+        vc.play(discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS))
+
+        embed = discord.Embed(title="🎵 再生開始", description=f"**[{title}]({webpage_url})**", color=0x1DB954)
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        await interaction.followup.send(f"❌ エラー: {e}")
+
+@bot.tree.command(name="stop", description="音楽を止めて退出します")
+async def stop(interaction: discord.Interaction):
+    if interaction.guild.voice_client:
+        await interaction.guild.voice_client.disconnect()
+        await interaction.response.send_message("👋 退出しました。")
+    else:
+        await interaction.response.send_message("ボイスチャンネルにいません。", ephemeral=True)
+
 bot.run(DISCORD_BOT_TOKEN)
