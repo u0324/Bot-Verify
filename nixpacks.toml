@@ -2,4 +2,4 @@
 nixPkgs = ["python311", "ffmpeg", "nodejs_20"]
 
 [phases.build]
-cmds = ["pip install -r 要件.txt"]
+cmds = ["pip install -r requirements.txt"]
