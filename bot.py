@@ -238,9 +238,15 @@ YDL_OPTIONS = {
     'format': 'bestaudio/best',
     'noplaylist': True,
     'quiet': True,
-    'cookiefile': 'cookies.txt',
     'no_check_certificate': True,
+    # ↓ ここからが重要（暗号解除の失敗を防ぐ）
+    'extract_flat': False,
+    'force_generic_extractor': False,
+    'source_address': '0.0.0.0', # IPv6によるブロックを避ける
+    # ↓ ブラウザのふりをしてYouTubeを騙す設定
+    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
+
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
