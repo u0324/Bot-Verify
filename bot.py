@@ -234,18 +234,20 @@ async def delete_latest(interaction: discord.Interaction):
     await interaction.response.send_message("✅ 最新のデータを削除しました" if cnt > 0 else "⚠️ 削除するデータがありません")
 
 # --- 音楽再生用の設定 ---
-YDL_OPTIONS = {  
-    'format': 'bestaudio/best',  
-    'noplaylist': True,  
-    'quiet': True,  
-    'no_check_certificate': True,  
-    'extract_flat': False,  
-    'force_generic_extractor': False,  
-    'source_address': '0.0.0.0',  
-    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',    
-    'cachedir': '/tmp/yt-dlp-cache',  # ← これを追加  
-    'socket_timeout': 30,  # ← これを追加  
+YDL_OPTIONS = {    
+    'format': 'bestaudio/best',    
+    'noplaylist': True,    
+    'quiet': True,    
+    'no_check_certificate': True,    
+    'extract_flat': False,    
+    'force_generic_extractor': False,    
+    'source_address': '0.0.0.0',    
+    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',      
+    'cachedir': '/tmp/yt-dlp-cache',    
+    'socket_timeout': 30,  
+    'js_runtimes': ['node'],  # ← これを追加  
 }  
+  
 
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
