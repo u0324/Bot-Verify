@@ -235,13 +235,11 @@ async def delete_latest(interaction: discord.Interaction):
 
 # --- 音楽再生用の設定 ---
 YDL_OPTIONS = {
-    'format': 'bestaudio/best', # 'bestaudio' だけでなく 'best' も候補に入れる
+    'format': 'bestaudio/best',
     'noplaylist': True,
     'quiet': True,
     'cookiefile': 'cookies.txt',
     'no_check_certificate': True,
-    'extract_flat': False,
-    'skip_download': True,
 }
 
 @bot.tree.command(name="music", description="音楽を再生します")
