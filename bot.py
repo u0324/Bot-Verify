@@ -238,12 +238,8 @@ YDL_OPTIONS = {
     'format': 'bestaudio/best',
     'noplaylist': True,
     'quiet': True,
-    # YouTubeのボット検知を回避するための「おまじない」
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['android', 'web']
-        }
-    }
+    'cookiefile': 'cookies.txt',  # ここが最重要！
+    'no_check_certificate': True,
 }
 
 @bot.tree.command(name="music", description="音楽を再生します")
