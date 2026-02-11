@@ -241,6 +241,10 @@ YDL_OPTIONS = {
     'cookiefile': 'cookies.txt',
     'no_check_certificate': True,
 }
+FFMPEG_OPTIONS = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn',
+}
 
 @bot.tree.command(name="music", description="音楽を再生します")
 @app_commands.describe(query="検索ワードまたはYouTubeリンク")
