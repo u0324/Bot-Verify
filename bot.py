@@ -234,13 +234,19 @@ async def delete_latest(interaction: discord.Interaction):
     await interaction.response.send_message("✅ 最新のデータを削除しました" if cnt > 0 else "⚠️ 削除するデータがありません")
 
 # --- 音楽再生用の設定 ---
-YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True}
-FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
+YDL_OPTIONS = {
+    'format': 'bestaudio/best',
+    'noplaylist': True,
+    'quiet': True,
+    # YouTubeのボット検知を回避するための「おまじない」
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android', 'web']
+        }
+    }
 }
 
-@bot.tree.command(name="music", description="音楽を再生します（曲名またはURL）")
+@bot.tree.command(name="music", description="音楽を再生します")
 @app_commands.describe(query="検索ワードまたはYouTubeリンク")
 async def music(interaction: discord.Interaction, query: str):
     if not interaction.user.voice:
