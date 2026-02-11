@@ -11,6 +11,7 @@ import numpy as np
 from datetime import datetime
 import pytz
 from sklearn.ensemble import RandomForestRegressor
+import yt_dlp
 
 # --- Secrets ---
 DATABASE_URL = os.getenv('DATABASE_URL')
