@@ -220,7 +220,7 @@ async def remindstop(interaction: discord.Interaction):
     conn.commit(); conn.close()
     await interaction.response.send_message("✅ すべて削除しました。")
 
-# --- 計算機能 (復元) ---
+# --- 計算機能 ---
 @bot.tree.command(name="calculation", description="簡単な計算を行います")
 @app_commands.choices(op=[
     app_commands.Choice(name="+", value="+"), 
