@@ -139,6 +139,7 @@ async def check_reminders_task():
                 cur.execute("DELETE FROM reminders WHERE id = %s", (r_id,))
     conn.commit()
     conn.close()
+bot.check_reminders_task = check_reminders_task
 
 # ==========================================
 # 3. イベント
