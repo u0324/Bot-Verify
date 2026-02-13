@@ -90,7 +90,7 @@ def get_full_analysis():
     X = df[features].values
     y = df['price'].values
     try:
-        model = RandomForestRegressor(n_estimators=100, max_depth=7, random_state=42)
+        model = RandomForestRegressor(n_estimators=50, max_depth=7, random_state=42)
         model.fit(X, y)
         now = datetime.now(timezone_jp)
         last_row = df.iloc[-1]
