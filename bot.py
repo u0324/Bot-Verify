@@ -38,7 +38,7 @@ class ChulyBot(commands.Bot):
 bot = ChulyBot()
 
 # ==========================================
-# 0. データベース操作 (株価 & リマインダー)
+# 0. データベース操作
 # ==========================================
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -46,10 +46,8 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     with conn.cursor() as cur:
-        # 株価
         cur.execute('''CREATE TABLE IF NOT EXISTS history 
                        (timestamp TIMESTAMPTZ, price FLOAT, month INT, day INT, hour INT, prediction_price FLOAT)''')
-        # リマインダー (contentを削除し簡略化)
         cur.execute('''CREATE TABLE IF NOT EXISTS reminders 
                        (id SERIAL PRIMARY KEY, user_id BIGINT, time TIMESTAMPTZ, interval_weeks INT)''')
     conn.commit()
@@ -79,7 +77,7 @@ def get_user_reminders(user_id):
     return rows
 
 # ==========================================
-# 1. AIロジック (株価予測 - ロジック完全維持)
+# 1. AIロジック (株価予測)
 # ==========================================
 def get_full_analysis():
     df = load_history()
@@ -115,7 +113,7 @@ def get_full_analysis():
     except: return "AI調整中", 0, 50, 0.0
 
 # ==========================================
-# 2. リマインダー監視 (定型文で通知)
+# 2. リマインダー監視タスク (定型文)
 # ==========================================
 @tasks.loop(seconds=5.0)
 async def check_reminders_task():
@@ -200,7 +198,24 @@ async def remindstop(interaction: discord.Interaction):
     conn.commit(); conn.close()
     await interaction.response.send_message("✅ すべて削除しました。")
 
-# --- 元の機能 (完全維持) ---
+# --- 計算機能 (復元) ---
+@bot.tree.command(name="calculation", description="簡単な計算を行います")
+@app_commands.choices(op=[
+    app_commands.Choice(name="+", value="+"), 
+    app_commands.Choice(name="-", value="-"), 
+    app_commands.Choice(name="*", value="*"), 
+    app_commands.Choice(name="/", value="/")
+])
+async def calculation(interaction: discord.Interaction, num1: float, op: str, num2: float):
+    try:
+        if op == '+': res = num1 + num2
+        elif op == '-': res = num1 - num2
+        elif op == '*': res = num1 * num2
+        elif op == '/': res = num1 / num2 if num2 != 0 else "Error"
+        await interaction.response.send_message(f"🧮 結果: `{num1} {op} {num2} = {res}`")
+    except: await interaction.response.send_message("エラーが発生しました")
+
+# --- 株価予測 (完全維持) ---
 @bot.tree.command(name="prediction", description="カカポの株価を予測します")
 async def prediction(interaction: discord.Interaction, price: int):
     if interaction.user.id != YOUR_USER_ID: return await interaction.response.send_message("⚠️ 開発者専用", ephemeral=True)
@@ -217,20 +232,6 @@ async def prediction(interaction: discord.Interaction, price: int):
     embed.add_field(name="📚 蓄積データ", value=f"{len(load_history())} 件", inline=True)
     embed.set_footer(text="AI学習式株価予測")
     await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="nuke", description="チャンネルをリセットします")
-@app_commands.describe(channel_id="リセットしたいチャンネルのIDを入力してください")
-async def nuke(interaction: discord.Interaction, channel_id: str):
-    if interaction.user.id != YOUR_USER_ID: return await interaction.response.send_message("⚠️ 開発者専用", ephemeral=True)
-    await interaction.response.defer(ephemeral=True)
-    try:
-        target = bot.get_channel(int(channel_id))
-        new_ch = await target.clone()
-        await target.delete()
-        await new_ch.edit(position=target.position)
-        await interaction.followup.send(f"✅ <#{new_ch.id}> を再生成しました。")
-        await new_ch.send("💥 チャンネルがリセットされました。")
-    except Exception as e: await interaction.followup.send(f"❌ エラー: {e}")
 
 @bot.tree.command(name="show_data", description="データの保存履歴と的中判定を表示します")
 async def show_data(interaction: discord.Interaction):
@@ -260,14 +261,29 @@ async def status(interaction: discord.Interaction):
     embed.add_field(name="📚 蓄積データ", value=f"**{len(load_history())} 件**", inline=True)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="calculation", description="簡単な計算を行います")
-@app_commands.choices(op=[app_commands.Choice(name="+", value="+"), app_commands.Choice(name="-", value="-"), app_commands.Choice(name="*", value="*"), app_commands.Choice(name="/", value="/")])
-async def calculation(interaction: discord.Interaction, num1: float, op: str, num2: float):
-    res = (num1 + num2) if op == '+' else (num1 - num2) if op == '-' else (num1 * num2) if op == '*' else (num1 / num2 if num2 != 0 else "Error")
-    await interaction.response.send_message(f"🧮 結果: `{num1} {op} {num2} = {res}`")
+# --- チャンネルリセット (維持) ---
+@bot.tree.command(name="nuke", description="チャンネルをリセットします")
+@app_commands.describe(channel_id="リセットしたいチャンネルのIDを入力してください")
+async def nuke(interaction: discord.Interaction, channel_id: str):
+    if interaction.user.id != YOUR_USER_ID: return await interaction.response.send_message("⚠️ 開発者専用", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    try:
+        target = bot.get_channel(int(channel_id))
+        new_ch = await target.clone()
+        await target.delete()
+        await new_ch.edit(position=target.position)
+        await interaction.followup.send(f"✅ <#{new_ch.id}> を再生成しました。")
+        await new_ch.send("💥 チャンネルがリセットされました。")
+    except Exception as e: await interaction.followup.send(f"❌ エラー: {e}")
 
+# --- アニメ (維持) ---
 @bot.tree.command(name="anime", description="今期の人気アニメを表示します")
-@app_commands.choices(season=[app_commands.Choice(name="🌸 春", value="spring"), app_commands.Choice(name="☀️ 夏", value="summer"), app_commands.Choice(name="🍂 秋", value="fall"), app_commands.Choice(name="❄️ 冬", value="winter")])
+@app_commands.choices(season=[
+    app_commands.Choice(name="🌸 春", value="spring"), 
+    app_commands.Choice(name="☀️ 夏", value="summer"), 
+    app_commands.Choice(name="🍂 秋", value="fall"), 
+    app_commands.Choice(name="❄️ 冬", value="winter")
+])
 async def anime(interaction: discord.Interaction, season: app_commands.Choice[str]):
     await interaction.response.defer()
     res = requests.get("https://api.annict.com/v1/works", params={'access_token': ANNICT_TOKEN, 'filter_season': f"2026-{season.value}", 'sort_watchers_count': 'desc', 'per_page': 10}).json()
