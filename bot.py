@@ -125,17 +125,20 @@ async def check_reminders_task():
         for r_id, u_id, r_time, interval in due:
             user = bot.get_user(u_id)
             if user:
+                # 定型文はそのまま維持
                 embed = discord.Embed(title="⏰ 通知", description="お約束の時間です。ご確認をお願いします。", color=0xff0000)
-                embed.set_footer(text=f"設定時刻: {r_time.astimezone(timezone_jp).strftime('%Y/%m/%d %H:%M:%S')}")
+                embed.set_footer(text=f"設定: {r_time.astimezone(timezone_jp).strftime('%H:%M:%S')}")
                 try: await user.send(content=f"{user.mention}", embed=embed)
                 except: pass
+            
             if interval > 0:
-                cur.execute("UPDATE reminders SET time = %s WHERE id = %s", (r_time + timedelta(weeks=interval), r_id))
-            else: cur.execute("DELETE FROM reminders WHERE id = %s", (r_id,))
+                # interval_weeks カラムを「時間」として扱い、次回の通知を計算
+                next_time = r_time + timedelta(hours=interval)
+                cur.execute("UPDATE reminders SET time = %s WHERE id = %s", (next_time, r_id))
+            else:
+                cur.execute("DELETE FROM reminders WHERE id = %s", (r_id,))
     conn.commit()
     conn.close()
-
-bot.check_reminders_task = check_reminders_task
 
 # ==========================================
 # 3. イベント
@@ -165,21 +168,40 @@ async def remind(interaction: discord.Interaction, date: str, time: str):
         await interaction.response.send_message(f"✅ 設定完了: {date} {time}")
     except: await interaction.response.send_message("⚠️ 形式エラー (2026/01/01 12:00:00)", ephemeral=True)
 
-@bot.tree.command(name="remindweek", description="○週間おきに通知を設定します (最大3件)")
-@app_commands.describe(weeks="何週間おきか", time="時刻 HH:MM:SS")
-async def remindweek(interaction: discord.Interaction, weeks: int, time: str):
+@bot.tree.command(name="remind_repeat", description="一定間隔で通知を設定します")
+@app_commands.describe(interval="間隔（数字）", unit="単位", time="基準時刻 HH:MM:SS")
+@app_commands.choices(unit=[
+    app_commands.Choice(name="週間おき", value="weeks"),
+    app_commands.Choice(name="時間おき", value="hours")
+])
+async def remind_repeat(interaction: discord.Interaction, interval: int, unit: app_commands.Choice[str], time: str):
     user_reminders = get_user_reminders(interaction.user.id)
-    if len(user_reminders) >= 3: return await interaction.response.send_message("⚠️ 最大3件までです。", ephemeral=True)
+    if len(user_reminders) >= 3: 
+        return await interaction.response.send_message("⚠️ 最大3件までです。", ephemeral=True)
+    
     try:
         now = datetime.now(timezone_jp)
         t = datetime.strptime(time, "%H:%M:%S").time()
-        dt = timezone_jp.localize(datetime.combine(now.date(), t))
-        if dt < now: dt += timedelta(weeks=weeks)
-        conn = get_db_connection(); cur = conn.cursor()
-        cur.execute("INSERT INTO reminders (user_id, time, interval_weeks) VALUES (%s, %s, %s)", (interaction.user.id, dt, weeks))
-        conn.commit(); conn.close()
-        await interaction.response.send_message(f"✅ 週間設定完了: {weeks}週間おき {time}")
-    except: await interaction.response.send_message("⚠️ 形式エラー (12:00:00)", ephemeral=True)
+        target_dt = timezone_jp.localize(datetime.combine(now.date(), t))
+        
+        # 単位に合わせて時間を計算 (1週間 = 168時間)
+        interval_in_hours = interval if unit.value == "hours" else interval * 168
+        
+        # 設定時刻が過去なら、指定の間隔分だけ進める
+        if target_dt < now:
+            target_dt += timedelta(hours=interval_in_hours)
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # カラム名は interval_weeks のままですが、中身は「時間」として保存します
+        cur.execute("INSERT INTO reminders (user_id, time, interval_weeks) VALUES (%s, %s, %s)", 
+                    (interaction.user.id, target_dt, interval_in_hours))
+        conn.commit()
+        conn.close()
+        
+        await interaction.response.send_message(f"✅ 繰り返し設定完了: {interval}{unit.name} (初回: {target_dt.strftime('%m/%d %H:%M')})")
+    except:
+        await interaction.response.send_message("⚠️ 形式エラー (例: 09:00:00)", ephemeral=True)
 
 @bot.tree.command(name="remindlist", description="現在設定中の通知を確認します")
 async def remindlist(interaction: discord.Interaction):
