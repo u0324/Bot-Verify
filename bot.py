@@ -151,7 +151,7 @@ async def on_ready():
 # ==========================================
 
 # --- リマインダー ---
-@bot.tree.command(name="remind", description="指定日時に通知を設定します (最大3件)")
+@bot.tree.command(name="remind", description="指定日時に通知を設定します")
 @app_commands.describe(date="YYYY/MM/DD", time="HH:MM:SS")
 async def remind(interaction: discord.Interaction, date: str, time: str):
     user_reminders = get_user_reminders(interaction.user.id)
@@ -261,7 +261,7 @@ async def status(interaction: discord.Interaction):
     embed.add_field(name="📚 蓄積データ", value=f"**{len(load_history())} 件**", inline=True)
     await interaction.response.send_message(embed=embed)
 
-# --- チャンネルリセット (維持) ---
+# --- チャンネルリセット ---
 @bot.tree.command(name="nuke", description="チャンネルをリセットします")
 @app_commands.describe(channel_id="リセットしたいチャンネルのIDを入力してください")
 async def nuke(interaction: discord.Interaction, channel_id: str):
