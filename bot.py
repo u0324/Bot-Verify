@@ -113,7 +113,7 @@ def get_full_analysis():
     except: return "AI調整中", 0, 50, 0.0
 
 # ==========================================
-# 2. リマインダー監視タスク (定型文)
+# 2. リマインダー監視タスク
 # ==========================================
 @tasks.loop(seconds=5.0)
 async def check_reminders_task():
@@ -125,14 +125,12 @@ async def check_reminders_task():
         for r_id, u_id, r_time, interval in due:
             user = bot.get_user(u_id)
             if user:
-                # 定型文はそのまま維持
                 embed = discord.Embed(title="⏰ 通知", description="お約束の時間です。ご確認をお願いします。", color=0xff0000)
                 embed.set_footer(text=f"設定: {r_time.astimezone(timezone_jp).strftime('%H:%M:%S')}")
                 try: await user.send(content=f"{user.mention}", embed=embed)
                 except: pass
             
             if interval > 0:
-                # interval_weeks カラムを「時間」として扱い、次回の通知を計算
                 next_time = r_time + timedelta(hours=interval)
                 cur.execute("UPDATE reminders SET time = %s WHERE id = %s", (next_time, r_id))
             else:
@@ -185,16 +183,13 @@ async def remind_repeat(interaction: discord.Interaction, interval: int, unit: a
         t = datetime.strptime(time, "%H:%M:%S").time()
         target_dt = timezone_jp.localize(datetime.combine(now.date(), t))
         
-        # 単位に合わせて時間を計算 (1週間 = 168時間)
         interval_in_hours = interval if unit.value == "hours" else interval * 168
         
-        # 設定時刻が過去なら、指定の間隔分だけ進める
         if target_dt < now:
             target_dt += timedelta(hours=interval_in_hours)
         
         conn = get_db_connection()
         cur = conn.cursor()
-        # カラム名は interval_weeks のままですが、中身は「時間」として保存します
         cur.execute("INSERT INTO reminders (user_id, time, interval_weeks) VALUES (%s, %s, %s)", 
                     (interaction.user.id, target_dt, interval_in_hours))
         conn.commit()
@@ -238,7 +233,7 @@ async def calculation(interaction: discord.Interaction, num1: float, op: str, nu
         await interaction.response.send_message(f"🧮 結果: `{num1} {op} {num2} = {res}`")
     except: await interaction.response.send_message("エラーが発生しました")
 
-# --- 株価予測 (完全維持) ---
+# --- 株価予測 ---
 @bot.tree.command(name="prediction", description="カカポの株価を予測します")
 async def prediction(interaction: discord.Interaction, price: int):
     if interaction.user.id != YOUR_USER_ID: return await interaction.response.send_message("⚠️ 開発者専用", ephemeral=True)
@@ -299,7 +294,7 @@ async def nuke(interaction: discord.Interaction, channel_id: str):
         await new_ch.send("💥 チャンネルがリセットされました。")
     except Exception as e: await interaction.followup.send(f"❌ エラー: {e}")
 
-# --- アニメ (維持) ---
+# --- アニメ ---
 @bot.tree.command(name="anime", description="今期の人気アニメを表示します")
 @app_commands.choices(season=[
     app_commands.Choice(name="🌸 春", value="spring"), 
