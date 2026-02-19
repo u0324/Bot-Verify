@@ -8,3 +8,5 @@ pytz
 scikit-learn
 PyNaCl
 sqlalchemy
+yt-dlp
+PyNaCl
