@@ -116,6 +116,7 @@ def get_full_analysis():
 
 # --- 音楽再生用の設定 ---
 YTDL_OPTIONS = {
+    'cookiefile': 'cookies.txt',
     'format': 'bestaudio/best',
     'extractaudio': True,
     'audioformat': 'mp3',
