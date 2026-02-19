@@ -116,7 +116,9 @@ def get_full_analysis():
 # --- 音楽再生用の設定 ---
 YTDL_OPTIONS = {
     'cookiefile': 'cookies.txt',
-    'format': 'bestaudio/best',
+    # 'bestaudio/best' だけでなく、ストリーミングに強い m4a や 
+    # YouTubeが提供する「一番軽い音声形式」を優先的に探す設定
+    'format': 'bestaudio[ext=m4a]/bestaudio/best',
     'extractaudio': True,
     'audioformat': 'mp3',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
@@ -129,6 +131,8 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
+    # ストリーミング時の403エラーを避けるための追加オプション
+    'force_generic_extractor': False,
 }
 
 FFMPEG_OPTIONS = {
