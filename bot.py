@@ -11,6 +11,8 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 from sklearn.ensemble import RandomForestRegressor
+import asyncio
+from yt_dlp import YoutubeDL
 
 # --- Secrets ---
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -111,6 +113,93 @@ def get_full_analysis():
         else: status = "方向感の探り合い ➡️"
         return status, diff, int(round(rsi)), score
     except: return "AI調整中", 0, 50, 0.0
+
+# --- 音楽再生用の設定 ---
+YTDL_OPTIONS = {
+    'format': 'bestaudio/best',
+    'extractaudio': True,
+    'audioformat': 'mp3',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0',
+}
+
+FFMPEG_OPTIONS = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn',
+}
+
+ytdl = YoutubeDL(YTDL_OPTIONS)
+
+class YTDLSource(discord.PCMVolumeTransformer):
+    def __init__(self, source, *, data, volume=0.5):
+        super().__init__(source, volume)
+        self.data = data
+        self.title = data.get('title')
+        self.url = data.get('url')
+
+    @classmethod
+    async def from_url(cls, url, *, loop=None, stream=True):
+        loop = loop or asyncio.get_event_loop()
+        # extract_info を非同期で実行してボットを止めないようにする
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        
+        if 'entries' in data:
+            data = data['entries'][0]
+
+        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data)
+
+# --- 音楽コマンドセクション ---
+
+@bot.tree.command(name="music", description="音楽を再生します")
+@app_commands.describe(query="曲名またはYouTubeのURL")
+async def music(interaction: discord.Interaction, query: str):
+    # ユーザーがボイスチャンネルにいるか確認
+    if interaction.user.voice is None:
+        return await interaction.response.send_message("⚠️ ボイスチャンネルに接続してから使用してください。", ephemeral=True)
+
+    await interaction.response.defer() # 取得に時間がかかる場合があるため
+
+    try:
+        # ボイスチャンネルに接続（未接続なら接続、接続済みなら移動）
+        channel = interaction.user.voice.channel
+        if interaction.guild.voice_client is None:
+            vc = await channel.connect()
+        else:
+            vc = interaction.guild.voice_client
+            if vc.channel.id != channel.id:
+                await vc.move_to(channel)
+
+        # 再生中の場合は停止
+        if vc.is_playing():
+            vc.stop()
+
+        # YouTubeからソースを取得
+        player = await YTDLSource.from_url(query, loop=bot.loop, stream=True)
+        
+        # 再生開始
+        vc.play(player, after=lambda e: print(f'Player error: {e}') if e else None)
+
+        await interaction.followup.send(f"🎵 再生中: **{player.title}**")
+
+    except Exception as e:
+        await interaction.followup.send(f"❌ エラーが発生しました: {e}")
+
+@bot.tree.command(name="stop", description="音楽を停止してボイスチャンネルから退出します")
+async def stop(interaction: discord.Interaction):
+    if interaction.guild.voice_client:
+        await interaction.guild.voice_client.disconnect()
+        await interaction.response.send_message("👋 退出しました。")
+    else:
+        await interaction.response.send_message("⚠️ ボットはボイスチャンネルにいません。", ephemeral=True)
 
 # ==========================================
 # 2. リマインダー監視タスク
