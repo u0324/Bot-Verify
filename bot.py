@@ -35,7 +35,6 @@ class ChulyBot(commands.Bot):
     async def setup_hook(self):
         init_db()
         self.check_reminders_task.start()
-        await self.tree.sync() 
 
 bot = ChulyBot()
 
